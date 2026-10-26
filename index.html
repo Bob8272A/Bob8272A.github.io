@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Off-Ramp Arcade: free browser games</title>
+<meta name="description" content="Free browser games. No downloads, no sign-up. Play Interstate Weave, a 3D highway traffic-weaving racer.">
+<meta property="og:title" content="Off-Ramp Arcade">
+<meta property="og:description" content="Free browser games. No downloads, no sign-up.">
+<meta property="og:image" content="assets/interstate-weave.svg">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 58 62'%3E%3Cpath d='M29 2C18 6 9 5 3 3 1 22 4 44 29 60 54 44 57 22 55 3 49 5 40 6 29 2Z' fill='%2300663f'/%3E%3Ctext x='29' y='42' text-anchor='middle' font-family='Arial' font-weight='900' font-size='24' fill='%23f3f2ec'%3E66%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800;900&family=Overpass+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="index.html" aria-label="Off-Ramp Arcade home">
+      <span class="logo-sign"><span>Off-Ramp Arcade</span></span>
+      <span class="logo-exit">EXIT 66</span>
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="index.html" aria-current="page">Games</a>
+      <a href="#about">About</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero wrap" aria-labelledby="featTitle">
+    <div class="hero-card">
+      <a class="hero-art" href="interstate-weave.html" aria-label="Play Interstate Weave">
+        <img src="assets/interstate-weave.svg" alt="">
+        <span class="tag">Featured</span>
+      </a>
+      <div class="hero-body">
+        <span class="kicker">3D racing · Free</span>
+        <h1 id="featTitle">Interstate Weave</h1>
+        <p>Thread a supercar through four lanes of highway traffic at 150 mph. Cut up through rush hour, outrun police pursuits, and clear 100 levels.</p>
+        <div class="chips">
+          <span class="chip">100 levels</span><span class="chip">Rush hour</span><span class="chip">Police pursuit</span><span class="chip">5 cars</span><span class="chip">Mobile ready</span>
+        </div>
+        <div class="btns">
+          <a class="btn" href="interstate-weave.html">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 4.5v15l12-7.5z"/></svg>
+            Play now
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section wrap" aria-labelledby="libTitle">
+    <div class="section-head">
+      <h2 id="libTitle">All games</h2>
+      <span class="count" id="count"></span>
+      <div class="tools">
+        <label class="search">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+          <input id="q" type="search" placeholder="Search games" aria-label="Search games" autocomplete="off">
+        </label>
+        <div class="filters" id="filters" role="group" aria-label="Filter by category"></div>
+      </div>
+    </div>
+    <div class="grid" id="grid"></div>
+    <p class="empty" id="empty">No games match that search.</p>
+  </section>
+
+  <section class="section wrap" id="about" aria-labelledby="aboutTitle">
+    <div class="panel">
+      <h2 id="aboutTitle">About</h2>
+      <p>Off-Ramp Arcade is a small collection of games that run right in your browser. Nothing to download and no account needed. Progress and high scores are saved on your own device.</p>
+      <p>More games are on the way.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span>© <span id="yr"></span> Off-Ramp Arcade</span>
+    <span>Best on a laptop or desktop with a keyboard. Touch controls work on phones.</span>
+  </div>
+</footer>
+
+<script>
+// ---------------------------------------------------------------
+// GAME LIST. To add a game:
+//   1. Put its files in games/<slug>/index.html
+//   2. Copy interstate-weave.html to <slug>.html and change the text
+//   3. Add an entry below. Entries with soon: true show as "Coming soon".
+// ---------------------------------------------------------------
+const GAMES = [
+  { slug: 'interstate-weave', title: 'Interstate Weave', blurb: 'Weave through highway traffic, cut up rush hour and outrun the police.', tags: ['Racing', '3D'], art: 'assets/interstate-weave.svg', badge: 'New' },
+  { title: 'Coming soon', blurb: 'Another game is being built for this slot.', tags: [], soon: true },
+  { title: 'Coming soon', blurb: 'Another game is being built for this slot.', tags: [], soon: true },
+];
+
+const grid = document.getElementById('grid'), q = document.getElementById('q'), filtersEl = document.getElementById('filters');
+const cats = ['All', ...new Set(GAMES.flatMap((g) => g.tags))];
+let cat = 'All';
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const cone = '<svg class="cone" viewBox="0 0 64 64" aria-hidden="true"><path d="M27 8h10l12 44H15z" fill="#f5b524"/><path d="M23 24h18l2.4 9H20.6zM19 39h26l2.2 8H16.8z" fill="#f3f2ec"/><rect x="8" y="52" width="48" height="6" rx="2" fill="#f5b524"/></svg>';
+
+cats.forEach((c) => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = c; b.setAttribute('aria-pressed', String(c === cat));
+  b.addEventListener('click', () => { cat = c; [...filtersEl.children].forEach((x) => x.setAttribute('aria-pressed', String(x === b))); render(); });
+  filtersEl.appendChild(b);
+});
+
+function render() {
+  const term = q.value.trim().toLowerCase();
+  const list = GAMES.filter((g) => {
+    if (g.soon) return !term && cat === 'All';
+    const hay = (g.title + ' ' + g.blurb + ' ' + g.tags.join(' ')).toLowerCase();
+    return (!term || hay.includes(term)) && (cat === 'All' || g.tags.includes(cat));
+  });
+  grid.innerHTML = list.map((g) => g.soon
+    ? `<div class="card soon" aria-label="Coming soon"><div class="card-art">${cone}</div><div class="card-body"><h3>${esc(g.title)}</h3><p>${esc(g.blurb)}</p></div></div>`
+    : `<a class="card" href="${esc(g.slug)}.html">
+         <div class="card-art"><img src="${esc(g.art)}" alt="" loading="lazy"></div>
+         ${g.badge ? `<span class="tag new">${esc(g.badge)}</span>` : ''}
+         <div class="card-body"><h3>${esc(g.title)}</h3><p>${esc(g.blurb)}</p>
+           <div class="chips">${g.tags.map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div></div>
+       </a>`).join('');
+  const real = GAMES.filter((g) => !g.soon).length;
+  document.getElementById('count').textContent = `${real} game${real === 1 ? '' : 's'}`;
+  document.getElementById('empty').style.display = list.length ? 'none' : 'block';
+}
+q.addEventListener('input', render);
+render();
+document.getElementById('yr').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

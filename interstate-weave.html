@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interstate Weave · Off-Ramp Arcade</title>
+<meta name="description" content="Play Interstate Weave free in your browser: a 3D highway traffic-weaving racer with rush hour, police pursuit and 100 levels.">
+<meta property="og:title" content="Interstate Weave">
+<meta property="og:image" content="assets/interstate-weave.svg">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 58 62'%3E%3Cpath d='M29 2C18 6 9 5 3 3 1 22 4 44 29 60 54 44 57 22 55 3 49 5 40 6 29 2Z' fill='%2300663f'/%3E%3Ctext x='29' y='42' text-anchor='middle' font-family='Arial' font-weight='900' font-size='24' fill='%23f3f2ec'%3E66%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800;900&family=Overpass+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="index.html" aria-label="Off-Ramp Arcade home">
+      <span class="logo-sign"><span>Off-Ramp Arcade</span></span>
+      <span class="logo-exit">EXIT 66</span>
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="index.html">Games</a>
+      <a href="index.html#about">About</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="play-head">
+    <div>
+      <a class="crumb" href="index.html">← All games</a>
+      <h1>Interstate Weave</h1>
+    </div>
+    <div class="btns">
+      <button class="btn small" id="fsBtn" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+        Fullscreen
+      </button>
+      <a class="btn ghost small" href="games/interstate-weave/index.html" target="_blank" rel="noopener">Open in new tab</a>
+    </div>
+  </div>
+
+  <div class="stage" id="stage">
+    <!-- The game loads only after the click, so the page itself opens fast -->
+    <button class="stage-cover" id="cover" type="button" style="background-image:url('assets/interstate-weave.svg')" aria-label="Start Interstate Weave">
+      <span class="btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 4.5v15l12-7.5z"/></svg>
+        Play
+      </span>
+    </button>
+  </div>
+  <p class="focus-hint">If the keys stop responding, click once inside the game.</p>
+
+  <div class="info">
+    <section class="panel" aria-labelledby="hTitle">
+      <h2 id="hTitle">How to play</h2>
+      <p>Drive fast, pass traffic within a metre for close calls, and chain them for big combos. Faster driving multiplies every point. Brushing a car only damages you. A real hit ends the run.</p>
+      <ul class="keys">
+        <li><span>Accelerate</span><span><kbd>W</kbd> <kbd>↑</kbd></span></li>
+        <li><span>Brake</span><span><kbd>S</kbd> <kbd>↓</kbd> <kbd>Space</kbd></span></li>
+        <li><span>Steer</span><span><kbd>A</kbd> <kbd>D</kbd> <kbd>←</kbd> <kbd>→</kbd></span></li>
+        <li><span>Camera</span><span><kbd>C</kbd></span></li>
+        <li><span>Pause</span><span><kbd>P</kbd> <kbd>Esc</kbd></span></li>
+        <li><span>Mute</span><span><kbd>M</kbd></span></li>
+      </ul>
+    </section>
+    <section class="panel" aria-labelledby="mTitle">
+      <h2 id="mTitle">Modes</h2>
+      <ul class="modes">
+        <li><b>Levels</b><span>100 runs to a named exit, with time limits and close-call quotas.</span></li>
+        <li><b>Endless</b><span>No finish line. Traffic builds the farther you go.</span></li>
+        <li><b>Pursuit</b><span>Police box you in. Escape to raise the heat.</span></li>
+        <li><b>Rush hour</b><span>Bumper-to-bumper traffic. Cut up and thread gaps to keep your flow multiplier high.</span></li>
+      </ul>
+    </section>
+    <section class="panel" aria-labelledby="tTitle">
+      <h2 id="tTitle">Tips</h2>
+      <p>Earn career points in any mode to unlock four faster cars in the garage.</p>
+      <p>Pick Easy, Normal or Hard on the menu. Try Two-way roads for double points on the wrong side.</p>
+      <p>Use the restart button next to the settings gear to start the run over.</p>
+    </section>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span>© <span id="yr"></span> Off-Ramp Arcade</span>
+    <a href="index.html">More games</a>
+  </div>
+</footer>
+
+<script>
+const stage = document.getElementById('stage'), cover = document.getElementById('cover');
+let frame = null;
+function load() {
+  if (frame) return frame;
+  frame = document.createElement('iframe');
+  frame.src = 'games/interstate-weave/index.html';
+  frame.title = 'Interstate Weave game';
+  frame.allow = 'fullscreen; autoplay; gamepad';
+  frame.setAttribute('allowfullscreen', '');
+  stage.appendChild(frame);
+  cover.remove();
+  frame.addEventListener('load', () => frame.focus());
+  return frame;
+}
+cover.addEventListener('click', load);
+document.getElementById('fsBtn').addEventListener('click', () => {
+  load();
+  const el = stage;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (req) req.call(el); else window.open('games/interstate-weave/index.html', '_blank');
+  setTimeout(() => frame && frame.focus(), 300);
+});
+stage.addEventListener('pointerdown', () => frame && frame.focus());
+document.getElementById('yr').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

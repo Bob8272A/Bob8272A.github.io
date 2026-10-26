@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Interstate Weave: a night highway full of traffic">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d1630"/>
+      <stop offset=".55" stop-color="#3a2a4a"/>
+      <stop offset="1" stop-color="#f08a52"/>
+    </linearGradient>
+    <linearGradient id="road" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2b30"/>
+      <stop offset="1" stop-color="#3d3e42"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#ff3a22" stop-opacity=".95"/>
+      <stop offset="1" stop-color="#ff3a22" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sun" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#ffd08a"/>
+      <stop offset=".4" stop-color="#ffa058" stop-opacity=".7"/>
+      <stop offset="1" stop-color="#ffa058" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="200" fill="url(#sky)"/>
+  <circle cx="470" cy="196" r="90" fill="url(#sun)"/>
+  <path d="M0 200 L60 168 L130 186 L210 160 L300 182 L380 158 L470 178 L560 150 L640 176 L640 200Z" fill="#2b2233"/>
+  <rect y="198" width="640" height="162" fill="#151a14"/>
+  <path d="M300 198 L340 198 L640 360 L0 360Z" fill="url(#road)"/>
+  <path d="M302 198 L308 198 L60 360 L30 360Z" fill="#e2b028" opacity=".85"/>
+  <path d="M332 198 L338 198 L610 360 L580 360Z" fill="#ecebe2" opacity=".85"/>
+  <g fill="#ecebe2" opacity=".9">
+    <path d="M314 210 L316 210 L298 246 L292 246Z"/><path d="M290 266 L294 266 L262 330 L252 330Z"/>
+    <path d="M321 210 L323 210 L323 246 L318 246Z"/><path d="M318 266 L323 266 L320 330 L310 330Z"/>
+    <path d="M327 210 L329 210 L346 246 L341 246Z"/><path d="M350 266 L356 266 L384 330 L373 330Z"/>
+  </g>
+  <!-- traffic -->
+  <g>
+    <rect x="296" y="214" width="12" height="7" rx="2" fill="#c9ccd0"/>
+    <rect x="330" y="222" width="16" height="9" rx="2" fill="#1e3c78"/>
+    <rect x="270" y="236" width="24" height="14" rx="3" fill="#e9e9e4"/>
+    <rect x="360" y="246" width="34" height="18" rx="3" fill="#5a5e62"/>
+    <rect x="196" y="272" width="62" height="32" rx="6" fill="#8b1015"/>
+    <rect x="405" y="262" width="54" height="30" rx="5" fill="#0c0d0f"/>
+  </g>
+  <g>
+    <circle cx="276" cy="246" r="7" fill="url(#glow)"/><circle cx="289" cy="246" r="7" fill="url(#glow)"/>
+    <circle cx="366" cy="259" r="9" fill="url(#glow)"/><circle cx="388" cy="259" r="9" fill="url(#glow)"/>
+    <circle cx="206" cy="296" r="14" fill="url(#glow)"/><circle cx="248" cy="296" r="14" fill="url(#glow)"/>
+    <circle cx="414" cy="284" r="12" fill="url(#glow)"/><circle cx="450" cy="284" r="12" fill="url(#glow)"/>
+  </g>
+  <!-- player car slicing the gap -->
+  <g transform="translate(300 300) rotate(-6)">
+    <path d="M-52 34 L-46 4 Q-40 -12 -24 -16 L24 -16 Q40 -12 46 4 L52 34 Z" fill="#f5b524"/>
+    <path d="M-30 -8 L30 -8 L36 8 L-36 8 Z" fill="#14171b"/>
+    <rect x="-46" y="18" width="20" height="7" rx="2" fill="#ff2a1a"/>
+    <rect x="26" y="18" width="20" height="7" rx="2" fill="#ff2a1a"/>
+    <circle cx="-36" cy="22" r="22" fill="url(#glow)"/><circle cx="36" cy="22" r="22" fill="url(#glow)"/>
+    <rect x="-58" y="32" width="20" height="10" rx="3" fill="#0b0b0b"/><rect x="38" y="32" width="20" height="10" rx="3" fill="#0b0b0b"/>
+  </g>
+  <!-- speed streaks -->
+  <g stroke="#fff" stroke-linecap="round" opacity=".18" stroke-width="2">
+    <path d="M40 300 L120 270"/><path d="M590 310 L520 280"/><path d="M80 340 L170 300"/><path d="M560 345 L470 305"/>
+  </g>
+</svg>
