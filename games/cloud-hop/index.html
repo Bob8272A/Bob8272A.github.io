@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Cloud Hop</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+let p, plats, top, maxH;
+function mk(y){ const t=Math.random(); return {x:Kit.rnd(10,330),y,w:80,type:t<.12?'move':t<.2?'frag':'ok',vx:Kit.rnd(60,120),dead:false}; }
+Kit.game({ id:'cloud-hop', title:'Cloud Hop', w:420, h:640, unit:'Height', help:'Steer left and right with the arrow keys, A/D, or by holding either side of the screen. You bounce on your own. Do not fall.',
+  start(){ p={x:210,y:520,vx:0,vy:-560}; plats=[{x:170,y:580,w:80,type:'ok'}]; for(let y=500;y>-700;y-=70) plats.push(mk(y)); maxH=0; top=-700; },
+  update(dt,g){ let ax=0; if(g.left) ax=-1; else if(g.right) ax=1; else if(g.ptr.down) ax=g.ptr.x<210?-1:1;
+    p.vx+=(ax*330-p.vx)*Math.min(1,dt*10); p.x+=p.vx*dt; if(p.x<-15)p.x=435; if(p.x>435)p.x=-15;
+    const py=p.y; p.vy+=1150*dt; p.y+=p.vy*dt;
+    for(const q of plats){ if(q.type==='move'){ q.x+=q.vx*dt; if(q.x<0||q.x>420-q.w) q.vx*=-1; }
+      if(!q.dead&&p.vy>0&&py+16<=q.y&&p.y+16>=q.y&&p.x>q.x-12&&p.x<q.x+q.w+12){ p.vy=-600; p.y=q.y-16; g.beep(520,.05,'triangle'); if(q.type==='frag') q.dead=true; } }
+    if(p.y<280){ const d=280-p.y; p.y=280; maxH+=d; for(const q of plats) q.y+=d; top+=d; }
+    plats=plats.filter(q=>q.y<680&&!(q.dead&&q.y>640)); const gapY=Math.min(125,70+maxH/250);
+    while(top>-60){ top-=gapY; plats.push(mk(top)); }
+    g.score=Math.floor(maxH/10); if(p.y>660){ g.beep(110,.4,'sawtooth'); g.over(); } },
+  draw(c){ const gr=c.createLinearGradient(0,0,0,640); gr.addColorStop(0,'#16284a'); gr.addColorStop(1,'#2b5a8a'); c.fillStyle=gr; c.fillRect(0,0,420,640);
+    for(const q of plats){ if(q.dead) continue; c.fillStyle=q.type==='move'?'#f5b524':q.type==='frag'?'#c9b9a2':'#f3f2ec'; c.beginPath(); c.roundRect(q.x,q.y,q.w,14,7); c.fill(); }
+    c.fillStyle='#e2362c'; c.beginPath(); c.arc(p.x,p.y,16,0,7); c.fill(); c.fillStyle='#fff'; c.fillRect(p.x-8,p.y-6,5,6); c.fillRect(p.x+3,p.y-6,5,6); }
+});
+})();
+</script>
+</body>
+</html>

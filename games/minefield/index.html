@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Minefield</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+const N=12, M=22, C=40; let cells, first, flagMode, openCount;
+const at=(x,y)=>x>=0&&y>=0&&x<N&&y<N?cells[y*N+x]:null;
+const around=(x,y)=>{ const o=[]; for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ if(dx||dy){ const q=at(x+dx,y+dy); if(q) o.push(q); } } return o; };
+function lay(sx,sy){ let n=0; while(n<M){ const q=cells[Kit.irnd(N*N)]; if(!q.mine&&(Math.abs(q.x-sx)>1||Math.abs(q.y-sy)>1)){ q.mine=true; n++; } } for(const q of cells) q.n=around(q.x,q.y).filter(a=>a.mine).length; }
+function open(q,g){ if(q.open||q.flag) return; q.open=true; openCount++; if(q.mine){ cells.forEach(k=>{ if(k.mine) k.open=true; }); g.beep(90,.5,'sawtooth'); g.noBest=true; return g.over('Boom!'); }
+  if(!q.n) around(q.x,q.y).forEach(a=>open(a,g)); }
+Kit.game({ id:'minefield', title:'Minefield', w:480, h:540, unit:'Seconds', low:true, help:'Click a square to open it. Numbers count the mines touching that square. Press F or use the Flag button to mark mines. Open every safe square.',
+  start(){ cells=[]; for(let y=0;y<N;y++)for(let x=0;x<N;x++) cells.push({x,y,mine:false,open:false,flag:false,n:0}); first=true; flagMode=false; openCount=0; },
+  key(c){ if(c==='KeyF') flagMode=!flagMode; },
+  tap(x,y,g){ if(y>480){ flagMode=!flagMode; return; } const q=at(Math.floor(x/C),Math.floor(y/C)); if(!q) return;
+    if(flagMode){ if(!q.open){ q.flag=!q.flag; g.beep(500,.04); } return; } if(first){ first=false; lay(q.x,q.y); g.t=0; }
+    open(q,g); g.beep(660,.03); if(g.playing&&openCount===N*N-M) g.win('Field cleared!'); },
+  update(dt,g){ g.score=first?0:Math.floor(g.t); },
+  draw(c){ c.font='900 20px sans-serif'; c.textAlign='center'; c.textBaseline='middle';
+    for(const q of cells){ const X=q.x*C,Y=q.y*C; c.fillStyle=q.open?(q.mine?'#7a1f1a':'#151c24'):'#2b3743'; c.fillRect(X+1,Y+1,C-2,C-2);
+      if(q.open&&q.mine){ c.fillStyle='#0b0f14'; c.beginPath(); c.arc(X+20,Y+20,10,0,7); c.fill(); }
+      else if(q.open&&q.n){ c.fillStyle=['','#4fc3f7','#3fb374','#f5b524','#f08a52','#e2362c','#d06bd0','#fff','#fff'][q.n]; c.fillText(q.n,X+20,Y+22); }
+      else if(q.flag){ c.fillStyle='#e2362c'; c.beginPath(); c.moveTo(X+14,Y+9); c.lineTo(X+29,Y+16); c.lineTo(X+14,Y+23); c.fill(); c.fillRect(X+12,Y+9,3,22); } }
+    c.fillStyle=flagMode?'#e2362c':'#2b3743'; c.beginPath(); c.roundRect(150,490,180,40,8); c.fill(); c.fillStyle='#f3f2ec'; c.font='900 16px sans-serif'; c.fillText(flagMode?'FLAG MODE: ON':'FLAG MODE: OFF',240,511); c.textAlign='left'; c.textBaseline='alphabetic'; }
+});
+})();
+</script>
+</body>
+</html>

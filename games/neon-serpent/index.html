@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Neon Serpent</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+const N = 24, C = 20; let body, dir, next, food, acc, spd;
+function place(){ do { food = {x:Kit.irnd(N), y:Kit.irnd(N)}; } while (body.some(b=>b.x===food.x&&b.y===food.y)); }
+function turn(d){ const m={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]}[d]; if (m && !(m[0]===-dir[0] && m[1]===-dir[1])) next = m; }
+Kit.game({ id:'neon-serpent', title:'Neon Serpent', w:480, h:480, help:'Arrow keys, WASD or swipe to steer. Eat the dots and do not hit the walls or yourself.',
+  start(){ body=[{x:8,y:12},{x:7,y:12},{x:6,y:12}]; dir=[1,0]; next=dir; acc=0; spd=8; place(); },
+  key(c){ turn({ArrowUp:'up',KeyW:'up',ArrowDown:'down',KeyS:'down',ArrowLeft:'left',KeyA:'left',ArrowRight:'right',KeyD:'right'}[c]); },
+  swipe(d){ turn(d); },
+  update(dt,g){ acc += dt*spd; while (acc >= 1 && g.playing) { acc--; dir = next;
+      const h = {x:body[0].x+dir[0], y:body[0].y+dir[1]};
+      if (h.x<0||h.y<0||h.x>=N||h.y>=N||body.some(b=>b.x===h.x&&b.y===h.y)) { g.beep(110,.4,'sawtooth'); return g.over(); }
+      body.unshift(h);
+      if (h.x===food.x&&h.y===food.y) { g.score+=10; spd=Math.min(18,spd+.25); g.beep(880,.07); place(); } else body.pop(); } },
+  draw(c){ c.fillStyle='#10161d'; for(let i=0;i<N;i++)for(let j=0;j<N;j++) if((i+j)%2) c.fillRect(i*C,j*C,C,C);
+    c.fillStyle='#e2362c'; c.beginPath(); c.arc(food.x*C+C/2,food.y*C+C/2,C*.38,0,7); c.fill();
+    body.forEach((b,i)=>{ c.fillStyle = i? `hsl(${150+i*3},80%,${55-Math.min(20,i)}%)` : '#f5b524'; c.fillRect(b.x*C+1,b.y*C+1,C-2,C-2); }); }
+});
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Switchboard</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+const N=5, C=88; let on, level, moves;
+function flip(x,y){ [[0,0],[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy])=>{ const a=x+dx,b=y+dy; if(a>=0&&b>=0&&a<N&&b<N) on[b*N+a]=!on[b*N+a]; }); }
+function setup(){ on=Array(N*N).fill(false); for(let i=0;i<3+level*2;i++) flip(Kit.irnd(N),Kit.irnd(N)); if(!on.some(v=>v)) flip(2,2); moves=0; }
+Kit.game({ id:'switchboard', title:'Switchboard', w:480, h:520, unit:'Boards', help:'Clicking a light flips it and its four neighbours. Turn every light off to clear the board. Press R to reset a board.',
+  start(){ level=1; setup(); }, key(c){ if(c==='KeyR') setup(); },
+  tap(x,y,g){ const cx=Math.floor((x-20)/C), cy=Math.floor((y-20)/C); if(cx<0||cy<0||cx>=N||cy>=N) return; flip(cx,cy); moves++; g.beep(on[cy*N+cx]?660:440,.05,'triangle');
+    if(!on.some(v=>v)){ g.score++; level++; g.beep(990,.2); setup(); } },
+  draw(c){ for(let i=0;i<N*N;i++){ const x=20+(i%N)*C, y=20+Math.floor(i/N)*C; c.fillStyle=on[i]?'#f5b524':'#1b2430'; c.shadowColor='#f5b524'; c.shadowBlur=on[i]?18:0; c.beginPath(); c.roundRect(x+5,y+5,C-10,C-10,12); c.fill(); } c.shadowBlur=0;
+    c.fillStyle='#a7b1b8'; c.font='700 15px monospace'; c.fillText('Board '+level+'   Moves '+moves+'   R resets',22,498); }
+});
+})();
+</script>
+</body>
+</html>

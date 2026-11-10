@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Pair Up</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+const COLS=6, ROWS=5, CW=78, CH=96; let cards, a, b, wait, found;
+const SH=['circle','square','tri','diamond','star','ring','cross','bar','hex','moon','drop','heart','bolt','dots','arrow'];
+function shape(c,k,x,y){ c.fillStyle=c.strokeStyle=`hsl(${k*24},80%,60%)`; c.lineWidth=7; c.beginPath(); const s=20;
+  switch(SH[k]){ case 'circle': c.arc(x,y,s,0,7); c.fill(); break; case 'square': c.fillRect(x-s,y-s,2*s,2*s); break;
+    case 'tri': c.moveTo(x,y-s); c.lineTo(x+s,y+s); c.lineTo(x-s,y+s); c.fill(); break; case 'diamond': c.moveTo(x,y-s-4); c.lineTo(x+s,y); c.lineTo(x,y+s+4); c.lineTo(x-s,y); c.fill(); break;
+    case 'star': for(let i=0;i<10;i++){ const r=i%2?9:s+3, t=i/10*6.283-1.57; c.lineTo(x+Math.cos(t)*r,y+Math.sin(t)*r); } c.fill(); break;
+    case 'ring': c.arc(x,y,s-3,0,7); c.stroke(); break; case 'cross': c.moveTo(x-s,y-s); c.lineTo(x+s,y+s); c.moveTo(x+s,y-s); c.lineTo(x-s,y+s); c.stroke(); break;
+    case 'bar': c.fillRect(x-s,y-6,2*s,12); break; case 'hex': for(let i=0;i<6;i++){ const t=i/6*6.283; c.lineTo(x+Math.cos(t)*s,y+Math.sin(t)*s); } c.fill(); break;
+    case 'moon': c.arc(x,y,s,.6,5.6); c.fill(); break; case 'drop': c.moveTo(x,y-s-4); c.quadraticCurveTo(x+s+6,y+s,x,y+s); c.quadraticCurveTo(x-s-6,y+s,x,y-s-4); c.fill(); break;
+    case 'heart': c.moveTo(x,y+s); c.bezierCurveTo(x-s*2,y-4,x-s*.6,y-s*1.4,x,y-6); c.bezierCurveTo(x+s*.6,y-s*1.4,x+s*2,y-4,x,y+s); c.fill(); break;
+    case 'bolt': c.moveTo(x+4,y-s-4); c.lineTo(x-s+4,y+4); c.lineTo(x,y+4); c.lineTo(x-4,y+s+4); c.lineTo(x+s-4,y-4); c.lineTo(x,y-4); c.fill(); break;
+    case 'dots': [[-11,-11],[11,-11],[-11,11],[11,11]].forEach(([p,q])=>{ c.moveTo(x+p+7,y+q); c.arc(x+p,y+q,7,0,7); }); c.fill(); break;
+    case 'arrow': c.moveTo(x,y-s-2); c.lineTo(x+s,y+2); c.lineTo(x+8,y+2); c.lineTo(x+8,y+s); c.lineTo(x-8,y+s); c.lineTo(x-8,y+2); c.lineTo(x-s,y+2); c.fill(); break; } }
+Kit.game({ id:'pair-up', title:'Pair Up', w:480, h:500, unit:'Flips', low:true, help:'Click two cards to flip them. Matching pairs stay face up. Find all 15 pairs in as few flips as you can.',
+  start(){ cards=Kit.shuffle([...Array(30).keys()].map(i=>({k:i>>1,up:false,done:false}))); a=b=null; wait=0; found=0; },
+  tap(x,y,g){ if(wait>0) return; const cx=Math.floor((x-6)/CW), cy=Math.floor((y-10)/CH); if(cx<0||cy<0||cx>=COLS||cy>=ROWS) return; const q=cards[cy*COLS+cx]; if(q.up||q.done) return;
+    q.up=true; g.score++; g.beep(520,.04,'triangle'); if(!a) a=q; else { b=q; if(a.k===b.k){ a.done=b.done=true; a=b=null; found++; g.beep(880,.1); if(found===15) g.win('All matched!'); } else wait=.8; } },
+  update(dt){ if(wait>0){ wait-=dt; if(wait<=0){ a.up=b.up=false; a=b=null; } } },
+  draw(c){ cards.forEach((q,i)=>{ const x=6+(i%COLS)*CW, y=10+Math.floor(i/COLS)*CH; c.fillStyle=q.up||q.done?'#151c24':'#00663f'; c.globalAlpha=q.done?.45:1; c.beginPath(); c.roundRect(x+4,y+4,CW-8,CH-8,9); c.fill();
+      if(q.up||q.done) shape(c,q.k,x+CW/2,y+CH/2); else { c.strokeStyle='rgba(243,242,236,.5)'; c.lineWidth=2; c.strokeRect(x+12,y+12,CW-24,CH-24); } c.globalAlpha=1; }); }
+});
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Rock Field</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+let s, rocks, shots, cool, wave, inv;
+function spawn(n){ for(let i=0;i<n;i++){ let x,y; do{ x=Kit.rnd(640); y=Kit.rnd(480);}while(Math.hypot(x-s.x,y-s.y)<140); rocks.push(rock(x,y,3)); } }
+function rock(x,y,sz){ const a=Kit.rnd(6.28), v=Kit.rnd(30,70)*(4-sz)*.7; const pts=[]; for(let i=0;i<9;i++) pts.push(Kit.rnd(.75,1.15)); return {x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,sz,r:sz*14,pts,rot:Kit.rnd(6),vr:Kit.rnd(-1,1)}; }
+const wrap=(o)=>{ o.x=(o.x+640)%640; o.y=(o.y+480)%480; };
+Kit.game({ id:'rock-field', title:'Rock Field', w:640, h:480, help:'Left/Right or A/D to turn, Up or W to thrust, Space to fire. Break every rock without being hit.',
+  start(){ s={x:320,y:240,vx:0,vy:0,a:-Math.PI/2}; rocks=[]; shots=[]; cool=0; wave=1; inv=2; spawn(4); },
+  update(dt,g){ if(g.left) s.a-=4*dt; if(g.right) s.a+=4*dt; s.th=g.up; if(g.up){ s.vx+=Math.cos(s.a)*260*dt; s.vy+=Math.sin(s.a)*260*dt; }
+    s.vx*=1-.4*dt; s.vy*=1-.4*dt; s.x+=s.vx*dt; s.y+=s.vy*dt; wrap(s); cool-=dt; inv-=dt;
+    if(g.key('Space')&&cool<=0){ cool=.2; shots.push({x:s.x+Math.cos(s.a)*14,y:s.y+Math.sin(s.a)*14,vx:Math.cos(s.a)*520+s.vx,vy:Math.sin(s.a)*520+s.vy,l:.9}); g.beep(740,.04); }
+    for(const b of shots){ b.x+=b.vx*dt; b.y+=b.vy*dt; b.l-=dt; wrap(b); }
+    for(const r of rocks){ r.x+=r.vx*dt; r.y+=r.vy*dt; r.rot+=r.vr*dt; wrap(r);
+      for(const b of shots) if(b.l>0&&Math.hypot(b.x-r.x,b.y-r.y)<r.r){ b.l=0; r.dead=true; g.score+=(4-r.sz)*20; g.beep(180,.12,'sawtooth'); if(r.sz>1){ rocks.push(rock(r.x,r.y,r.sz-1),rock(r.x,r.y,r.sz-1)); } break; }
+      if(!r.dead&&inv<=0&&Math.hypot(s.x-r.x,s.y-r.y)<r.r+9){ g.beep(90,.5,'sawtooth'); return g.over(); } }
+    rocks=rocks.filter(r=>!r.dead); shots=shots.filter(b=>b.l>0);
+    if(!rocks.length){ wave++; inv=1.5; spawn(3+wave); } },
+  draw(c){ c.strokeStyle='#a7b1b8'; c.lineWidth=2; for(const r of rocks){ c.beginPath(); r.pts.forEach((p,i)=>{ const a=r.rot+i/9*6.283; c[i?'lineTo':'moveTo'](r.x+Math.cos(a)*r.r*p,r.y+Math.sin(a)*r.r*p); }); c.closePath(); c.stroke(); }
+    c.fillStyle='#f5b524'; for(const b of shots) c.fillRect(b.x-2,b.y-2,4,4);
+    c.save(); c.translate(s.x,s.y); c.rotate(s.a); c.globalAlpha=inv>0?.5:1; c.strokeStyle='#f3f2ec'; c.beginPath(); c.moveTo(14,0); c.lineTo(-10,-9); c.lineTo(-5,0); c.lineTo(-10,9); c.closePath(); c.stroke();
+    if(s.th){ c.strokeStyle='#f08a52'; c.beginPath(); c.moveTo(-7,-4); c.lineTo(-16,0); c.lineTo(-7,4); c.stroke(); } c.restore(); }
+});
+})();
+</script>
+</body>
+</html>

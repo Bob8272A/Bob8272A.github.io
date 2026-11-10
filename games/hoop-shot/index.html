@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Hoop Shot</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+let ball, hoop, aim, flying, shotsLeft, scored, sx, sy;
+const HR=30;
+function reset(g){ ball={x:Kit.rnd(70,240),y:Kit.rnd(330,410),vx:0,vy:0}; hoop={x:Kit.rnd(430,560),y:Kit.rnd(150,260),vy:g.score>=5?Kit.rnd(30,60):0}; flying=false; scored=false; aim=null; }
+Kit.game({ id:'hoop-shot', title:'Hoop Shot', w:640, h:480, unit:'Baskets', help:'Drag back from the ball and let go to shoot, like a slingshot. The dotted line shows your aim. You have 10 balls, and every basket earns one back.',
+  start(g){ shotsLeft=10; reset(g); },
+  tap(x,y){ if(!flying){ sx=x; sy=y; aim={x:0,y:0}; } },
+  release(x,y,g){ if(flying||!aim) return; const dx=sx-x, dy=sy-y; aim=null; if(Math.hypot(dx,dy)<12) return; ball.vx=Kit.clamp(dx*5,-900,900); ball.vy=Kit.clamp(dy*5,-900,900); flying=true; shotsLeft--; g.beep(420,.06,'triangle'); },
+  update(dt,g){ if(hoop.vy){ hoop.y+=hoop.vy*dt; if(hoop.y<120||hoop.y>290) hoop.vy*=-1; }
+    if(aim&&g.ptr.down){ aim={x:sx-g.ptr.x,y:sy-g.ptr.y}; }
+    if(!flying) return; const py=ball.y; ball.vy+=900*dt; ball.x+=ball.vx*dt; ball.y+=ball.vy*dt;
+    for(const rx of [hoop.x-HR,hoop.x+HR]){ const d=Math.hypot(ball.x-rx,ball.y-hoop.y); if(d<16){ const nx=(ball.x-rx)/d, ny=(ball.y-hoop.y)/d, dot=ball.vx*nx+ball.vy*ny; if(dot<0){ ball.vx-=1.7*dot*nx; ball.vy-=1.7*dot*ny; g.beep(300,.04); } ball.x=rx+nx*16; ball.y=hoop.y+ny*16; } }
+    if(ball.x>hoop.x+HR+18&&ball.x<hoop.x+HR+30&&ball.y>hoop.y-90&&ball.y<hoop.y+10&&ball.vx>0){ ball.vx*=-.5; ball.x=hoop.x+HR+18; }
+    if(!scored&&ball.vy>0&&py<hoop.y&&ball.y>=hoop.y&&Math.abs(ball.x-hoop.x)<HR-6){ scored=true; g.score++; shotsLeft++; g.beep(880,.15); }
+    if(ball.y>520||ball.x<-40||ball.x>690){ if(shotsLeft<=0) return g.over('Out of balls'); reset(g); } },
+  draw(c,g){ c.fillStyle='#3a2a1c'; c.fillRect(0,440,640,40); c.fillStyle='#f3f2ec'; c.fillRect(hoop.x+HR+30,hoop.y-90,8,100); c.fillStyle='#8a939a'; c.fillRect(hoop.x+HR+34,hoop.y,6,440-hoop.y);
+    c.strokeStyle='rgba(243,242,236,.5)'; c.lineWidth=1; for(let i=-3;i<=3;i++){ c.beginPath(); c.moveTo(hoop.x+i*9,hoop.y); c.lineTo(hoop.x+i*6,hoop.y+34); c.stroke(); }
+    c.strokeStyle='#e2362c'; c.lineWidth=5; c.beginPath(); c.moveTo(hoop.x-HR,hoop.y); c.lineTo(hoop.x+HR+30,hoop.y); c.stroke();
+    if(aim&&!flying){ let x=ball.x,y=ball.y,vx=Kit.clamp(aim.x*5,-900,900),vy=Kit.clamp(aim.y*5,-900,900); c.fillStyle='rgba(243,242,236,.6)'; for(let i=0;i<14;i++){ for(let k=0;k<3;k++){ vy+=900*.016; x+=vx*.016; y+=vy*.016; } c.fillRect(x-2,y-2,4,4); } }
+    c.fillStyle='#f08a52'; c.beginPath(); c.arc(ball.x,ball.y,14,0,7); c.fill(); c.strokeStyle='#5a2d12'; c.lineWidth=1.5; c.beginPath(); c.moveTo(ball.x-14,ball.y); c.lineTo(ball.x+14,ball.y); c.moveTo(ball.x,ball.y-14); c.lineTo(ball.x,ball.y+14); c.stroke();
+    c.fillStyle='#a7b1b8'; c.font='700 15px monospace'; c.fillText('Balls left '+shotsLeft,14,26); }
+});
+})();
+</script>
+</body>
+</html>

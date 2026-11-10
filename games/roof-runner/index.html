@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Roof Runner</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+let y, vy, onG, roofs, speed, jumps, dist;
+const X=110, GH=24;
+function jump(g){ if(jumps<2){ vy=-520; jumps++; onG=false; g.beep(jumps===1?440:620,.06,'triangle'); } }
+Kit.game({ id:'roof-runner', title:'Roof Runner', w:720, h:400, unit:'Metres', help:'Space, Up or tap to jump. Tap again in the air for a double jump. Do not fall between the rooftops.',
+  start(){ y=250; vy=0; onG=true; jumps=0; speed=300; dist=0; roofs=[{x:0,w:700,y:280}]; },
+  tap(x,yy,g){ jump(g); }, key(c,g){ if(c==='Space'||c==='ArrowUp'||c==='KeyW') jump(g); },
+  update(dt,g){ speed=Math.min(620,speed+6*dt); dist+=speed*dt; g.score=Math.floor(dist/10);
+    for(const r of roofs) r.x-=speed*dt; roofs=roofs.filter(r=>r.x+r.w>-20);
+    let l=roofs[roofs.length-1]; while(l.x+l.w<760){ const gap=Kit.rnd(70,90+speed*.22); const n={x:l.x+l.w+gap,w:Kit.rnd(180,420),y:Kit.clamp(l.y+Kit.rnd(-70,70),170,340)}; roofs.push(n); l=n; }
+    const py=y; vy+=1500*dt; y+=vy*dt; onG=false;
+    for(const r of roofs){ if(X+12>r.x&&X-12<r.x+r.w){ if(py<=r.y-GH+1&&y>=r.y-GH&&vy>=0){ y=r.y-GH; vy=0; onG=true; jumps=0; } else if(y>r.y-GH+4&&X+12>r.x&&X-12<r.x+6){ } } }
+    if(y>430){ g.beep(110,.4,'sawtooth'); g.over(); } },
+  draw(c,g){ const gr=c.createLinearGradient(0,0,0,400); gr.addColorStop(0,'#1a1033'); gr.addColorStop(1,'#f08a52'); c.fillStyle=gr; c.fillRect(0,0,720,400);
+    c.fillStyle='rgba(11,15,20,.45)'; for(let i=0;i<9;i++){ const x=((i*110-dist*.2)%990+990)%990-110; c.fillRect(x,200+((i*53)%90),70,300); }
+    for(const r of roofs){ c.fillStyle='#0b0f14'; c.fillRect(r.x,r.y,r.w,400); c.fillStyle='#f5b524'; c.fillRect(r.x,r.y,r.w,4);
+      c.fillStyle='#232e3a'; for(let wx=r.x+14;wx<r.x+r.w-18;wx+=28) for(let wy=r.y+18;wy<400;wy+=30) c.fillRect(wx,wy,12,14); }
+    c.fillStyle='#f3f2ec'; const b=onG?Math.sin(dist/14)*3:0; c.fillRect(X-10,y+b,20,GH-b); c.fillStyle='#e2362c'; c.fillRect(X-10,y+b,20,6); }
+});
+})();
+</script>
+</body>
+</html>

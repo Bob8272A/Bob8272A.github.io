@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Flip Side</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+const N=8, C=56; let bd, turn, think, msg;
+const D=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+function flips(b,x,y,w){ if(b[y*N+x]) return []; const out=[]; for(const [dx,dy] of D){ const line=[]; let a=x+dx, c=y+dy; while(a>=0&&c>=0&&a<N&&c<N&&b[c*N+a]===3-w){ line.push(c*N+a); a+=dx; c+=dy; } if(line.length&&a>=0&&c>=0&&a<N&&c<N&&b[c*N+a]===w) out.push(...line); } return out; }
+function moves(b,w){ const m=[]; for(let i=0;i<64;i++){ const f=flips(b,i%N,i>>3,w); if(f.length) m.push({i,f}); } return m; }
+const WT=[9,-3,3,2,2,3,-3,9,-3,-5,0,0,0,0,-5,-3,3,0,1,1,1,1,0,3,2,0,1,1,1,1,0,2,2,0,1,1,1,1,0,2,3,0,1,1,1,1,0,3,-3,-5,0,0,0,0,-5,-3,9,-3,3,2,2,3,-3,9];
+function count(){ return [bd.filter(v=>v===1).length, bd.filter(v=>v===2).length]; }
+function play(m,w,g){ bd[m.i]=w; m.f.forEach(i=>bd[i]=w); g.beep(w===1?560:400,.06,'triangle'); }
+function next(g){ const other=3-turn; if(moves(bd,other).length) turn=other; else if(!moves(bd,turn).length){ const [p,a]=count(); g.score=p; if(p>a) g.win('You win '+p+' to '+a); else { g.noBest=true; g.over(p===a?'Draw':'Computer wins '+a+' to '+p); } return; }
+  if(turn===2) think=.6; }
+Kit.game({ id:'flip-side', title:'Flip Side', w:480, h:520, unit:'Discs', help:'You play light discs. Place a disc so it traps dark discs in a line between two of yours, and they flip to your side. Most discs at the end wins.',
+  start(){ bd=Array(64).fill(0); bd[27]=bd[36]=2; bd[28]=bd[35]=1; turn=1; think=0; },
+  tap(x,y,g){ if(turn!==1) return; const cx=Math.floor((x-16)/C), cy=Math.floor((y-16)/C); if(cx<0||cy<0||cx>=N||cy>=N) return; const f=flips(bd,cx,cy,1); if(!f.length) return; play({i:cy*N+cx,f},1,g); next(g); },
+  update(dt,g){ g.score=count()[0]; if(turn===2&&g.playing){ think-=dt; if(think<=0){ const ms=moves(bd,2); let best=ms[0], bv=-1e9; for(const m of ms){ const v=WT[m.i]*3+m.f.length+Math.random(); if(v>bv){ bv=v; best=m; } } play(best,2,g); next(g); } } },
+  draw(c){ c.fillStyle='#0f5a3a'; c.fillRect(16,16,448,448); c.strokeStyle='#0a3d27'; c.lineWidth=2; for(let i=0;i<=N;i++){ c.beginPath(); c.moveTo(16+i*C,16); c.lineTo(16+i*C,464); c.moveTo(16,16+i*C); c.lineTo(464,16+i*C); c.stroke(); }
+    const ok=turn===1?moves(bd,1).map(m=>m.i):[]; for(let i=0;i<64;i++){ const x=16+(i%N)*C+C/2, y=16+(i>>3)*C+C/2; if(bd[i]){ c.fillStyle=bd[i]===1?'#f3f2ec':'#11171e'; c.beginPath(); c.arc(x,y,22,0,7); c.fill(); } else if(ok.includes(i)){ c.fillStyle='rgba(243,242,236,.25)'; c.beginPath(); c.arc(x,y,7,0,7); c.fill(); } }
+    const [p,a]=count(); c.fillStyle='#a7b1b8'; c.font='700 16px monospace'; c.fillText('You '+p+'   Computer '+a+(turn===2?'   thinking...':''),18,500); }
+});
+})();
+</script>
+</body>
+</html>

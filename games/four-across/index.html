@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Four Across</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+const CO=7, RO=6, C=64; let bd, turn, think, lastCol, wins;
+const rowFor=(b,c)=>{ for(let r=RO-1;r>=0;r--) if(!b[r*CO+c]) return r; return -1; };
+function winner(b){ const D=[[1,0],[0,1],[1,1],[1,-1]]; for(let r=0;r<RO;r++)for(let c=0;c<CO;c++){ const v=b[r*CO+c]; if(!v) continue; for(const [dx,dy] of D){ let k=1; while(k<4){ const x=c+dx*k,y=r+dy*k; if(x<0||y<0||x>=CO||y>=RO||b[y*CO+x]!==v) break; k++; } if(k===4) return v; } } return b.every(v=>v)?3:0; }
+function score(b){ let s=0; const D=[[1,0],[0,1],[1,1],[1,-1]]; for(let r=0;r<RO;r++)for(let c=0;c<CO;c++)for(const [dx,dy] of D){ const ex=c+dx*3, ey=r+dy*3; if(ex<0||ey<0||ex>=CO||ey>=RO) continue; let a=0,p=0; for(let k=0;k<4;k++){ const v=b[(r+dy*k)*CO+c+dx*k]; if(v===2)a++; else if(v===1)p++; } if(a&&p) continue; s+=[0,1,6,40,0][a]-[0,1,6,45,0][p]; } for(let r=0;r<RO;r++) if(b[r*CO+3]===2) s+=3; return s; }
+function search(b,d,al,be,me){ const w=winner(b); if(w===2) return 10000+d; if(w===1) return -10000-d; if(w===3) return 0; if(!d) return score(b);
+  let best=me?-1e9:1e9; for(const c of [3,2,4,1,5,0,6]){ const r=rowFor(b,c); if(r<0) continue; b[r*CO+c]=me?2:1; const v=search(b,d-1,al,be,!me); b[r*CO+c]=0;
+    if(me){ best=Math.max(best,v); al=Math.max(al,v); } else { best=Math.min(best,v); be=Math.min(be,v); } if(al>=be) break; } return best; }
+function aiMove(){ let bv=-1e9, bc=3; for(const c of [3,2,4,1,5,0,6]){ const r=rowFor(bd,c); if(r<0) continue; bd[r*CO+c]=2; const v=search(bd,4,-1e9,1e9,false)+Math.random(); bd[r*CO+c]=0; if(v>bv){ bv=v; bc=c; } } return bc; }
+function drop(c,who,g){ const r=rowFor(bd,c); if(r<0) return false; bd[r*CO+c]=who; lastCol=c; g.beep(who===1?520:380,.06,'triangle'); const w=winner(bd);
+  if(w===1){ g.score=1; g.win('You win!'); } else if(w===2){ g.noBest=true; g.over('Computer wins'); } else if(w===3){ g.noBest=true; g.over('Draw'); } return true; }
+Kit.game({ id:'four-across', title:'Four Across', w:480, h:480, unit:'Win', help:'Click a column to drop your yellow disc. Line up four in a row, column or diagonal before the computer does.',
+  start(){ bd=Array(CO*RO).fill(0); turn=1; think=0; },
+  tap(x,y,g){ if(turn!==1) return; const c=Math.floor((x-16)/C); if(c<0||c>=CO) return; if(drop(c,1,g)&&g.playing){ turn=2; think=.45; } },
+  update(dt,g){ if(turn===2){ think-=dt; if(think<=0){ drop(aiMove(),2,g); turn=1; } } },
+  draw(c,g){ c.fillStyle='#14325c'; c.beginPath(); c.roundRect(10,74,460,396,14); c.fill(); const hc=Math.floor((g.ptr.x-16)/C);
+    if(turn===1&&hc>=0&&hc<CO){ c.fillStyle='rgba(245,181,36,.6)'; c.beginPath(); c.arc(16+hc*C+C/2,40,24,0,7); c.fill(); }
+    for(let r=0;r<RO;r++)for(let k=0;k<CO;k++){ const v=bd[r*CO+k]; c.fillStyle=v===1?'#f5b524':v===2?'#e2362c':'#0b0f14'; c.beginPath(); c.arc(16+k*C+C/2,84+r*C+C/2,25,0,7); c.fill(); } }
+});
+})();
+</script>
+</body>
+</html>

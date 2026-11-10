@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Sky Stack</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+let stack, cur, dir, cam;
+const BH=28;
+function drop(g){ const top=stack[stack.length-1]; const l=Math.max(cur.x,top.x), r=Math.min(cur.x+cur.w,top.x+top.w);
+  if(r-l<=2){ g.beep(110,.4,'sawtooth'); return g.over(); }
+  const perfect=Math.abs(cur.x-top.x)<5; const nb=perfect?{x:top.x,w:top.w}:{x:l,w:r-l}; stack.push(nb); g.score++; g.beep(perfect?990:440+g.score*12,.08,'triangle');
+  cur={x:dir>0?-nb.w:480,w:nb.w}; dir=-dir; }
+Kit.game({ id:'sky-stack', title:'Sky Stack', w:480, h:640, unit:'Floors', help:'Tap, click or press Space to drop each block. Line them up or the overhang is cut off.',
+  start(){ stack=[{x:140,w:200}]; cur={x:-200,w:200}; dir=1; cam=0; }, tap(x,y,g){ drop(g); }, key(c,g){ if(c==='Space') drop(g); },
+  update(dt,g){ const s=170+g.score*7; cur.x+=dir*s*dt; if(cur.x>480-cur.w/2){ dir=-1; } if(cur.x<-cur.w/2){ dir=1; }
+    cam+=(Math.max(0,(stack.length-8)*BH)-cam)*dt*6; },
+  draw(c,g){ const gr=c.createLinearGradient(0,0,0,640); gr.addColorStop(0,'#0c1830'); gr.addColorStop(1,'#182437'); c.fillStyle=gr; c.fillRect(0,0,480,640);
+    stack.forEach((b,i)=>{ c.fillStyle=`hsl(${(i*14+200)%360},65%,55%)`; c.fillRect(b.x,600-(i+1)*BH+cam,b.w,BH-2); });
+    c.fillStyle='#f3f2ec'; c.fillRect(cur.x,600-(stack.length+1)*BH+cam,cur.w,BH-2); c.fillStyle='#26313c'; c.fillRect(0,600+cam,480,60); }
+});
+})();
+</script>
+</body>
+</html>

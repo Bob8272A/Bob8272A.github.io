@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Slide Fifteen</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+const N=4, C=110; let t, hole;
+function mv(i,g,quiet){ const hx=hole%N, hy=Math.floor(hole/N), x=i%N, y=Math.floor(i/N); if(Math.abs(hx-x)+Math.abs(hy-y)!==1) return false; t[hole]=t[i]; t[i]=0; hole=i; if(!quiet){ g.score++; g.beep(520,.04,'triangle'); if(t.every((v,k)=>v===(k+1)%16)) g.win('Solved!'); } return true; }
+Kit.game({ id:'slide-fifteen', title:'Slide Fifteen', w:480, h:480, unit:'Moves', low:true, help:'Click a tile next to the gap to slide it, or use the arrow keys. Put the numbers in order from 1 to 15.',
+  start(g){ t=[...Array(15).keys()].map(v=>v+1).concat(0); hole=15; let last=-1; for(let k=0;k<200;k++){ const hx=hole%N, hy=Math.floor(hole/N); const opts=[[1,0],[-1,0],[0,1],[0,-1]].map(([a,b])=>[hx+a,hy+b]).filter(([a,b])=>a>=0&&b>=0&&a<N&&b<N).map(([a,b])=>b*N+a).filter(i=>i!==last); const i=Kit.pick(opts); last=hole; mv(i,g,true); } },
+  tap(x,y,g){ const cx=Math.floor((x-20)/C), cy=Math.floor((y-20)/C); if(cx>=0&&cy>=0&&cx<N&&cy<N) mv(cy*N+cx,g); },
+  key(c,g){ const hx=hole%N, hy=Math.floor(hole/N); const m={ArrowLeft:[1,0],ArrowRight:[-1,0],ArrowUp:[0,1],ArrowDown:[0,-1]}[c]; if(m){ const a=hx+m[0], b=hy+m[1]; if(a>=0&&b>=0&&a<N&&b<N) mv(b*N+a,g); } },
+  draw(c){ c.textAlign='center'; c.textBaseline='middle'; c.font='900 40px sans-serif'; t.forEach((v,i)=>{ if(!v) return; const x=20+(i%N)*C, y=20+Math.floor(i/N)*C; c.fillStyle=v===i+1?'#00663f':'#243240'; c.beginPath(); c.roundRect(x+4,y+4,C-8,C-8,10); c.fill(); c.fillStyle='#f3f2ec'; c.fillText(v,x+C/2,y+C/2+3); }); c.textAlign='left'; c.textBaseline='alphabetic'; }
+});
+})();
+</script>
+</body>
+</html>

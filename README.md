@@ -1,13 +1,16 @@
 # Off-Ramp Arcade
 
-A small games website with Interstate Weave on it. Everything is plain HTML, so any free static host works.
+A games website with a dark theme, a home page listing every game, and tabs across the top for each genre. Everything is plain HTML, so any free static host works.
 
 ```
-index.html                     home page with the game grid
-interstate-weave.html          play page (game window, fullscreen button, controls)
-games/interstate-weave/        the game itself
+index.html                     home page: all games, genre tabs, search
+play.html                      shared play page, opened as play.html?g=<slug>
+interstate-weave.html          play page for Interstate Weave
+games/<slug>/index.html        one folder per game
+assets/games.js                the list of games (titles, genres, card art, how-to-play text)
+assets/kit.js                  small helper the built-in games share (canvas, input, sound, high scores)
 assets/style.css               site styles
-assets/interstate-weave.svg    game thumbnail
+assets/arcade.css              styles for the tabs, cards and shared play page
 ```
 
 ## Put it online with GitHub Pages (free)
@@ -26,13 +29,21 @@ Go to https://app.netlify.com/drop and drag this whole folder onto the page. You
 
 ## Rename the site
 
-Search for `Off-Ramp Arcade` and `EXIT 66` in `index.html` and `interstate-weave.html` and replace them with your own name.
+Search for `Off-Ramp Arcade` and `EXIT 66` in `index.html`, `play.html` and `interstate-weave.html` and replace them with your own name.
 
 ## Add another game
 
 1. Put the game in `games/<slug>/index.html`.
-2. Copy `interstate-weave.html` to `<slug>.html` and change the title, text, and the two `games/interstate-weave/index.html` paths.
-3. Add a line to the `GAMES` list near the bottom of `index.html`, and remove one of the "Coming soon" entries.
+2. Add an entry for it to the `GAMES` list in `assets/games.js`. Give it a `genre` from the `GENRES` list at the top of that file and it shows up on the home page and under that genre's tab.
+
+## Credits and licenses
+
+Most games were written for this site. Two are open-source games included under their own licenses, with the license file kept in each folder:
+
+- `games/2048/` is 2048 by Gabriele Cirulli (MIT License). Source: https://github.com/gabrielecirulli/2048
+- `games/hextris/` is Hextris by Logan Engstrom, Garrett Finucane, Noah Moroze and Michael Yang (GNU GPL v3). Source: https://github.com/Hextris/hextris. Advertising and analytics scripts were removed and the share buttons are hidden.
+
+Only add games you made or whose license allows them to be re-hosted, and keep their credit and license file.
 
 ## Note
 

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Paper Pilot</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+let y, vy, gates, sp;
+function flap(g){ vy=-330; g.beep(520,.05,'triangle'); }
+Kit.game({ id:'paper-pilot', title:'Paper Pilot', w:420, h:620, help:'Tap, click or press Space to lift the paper plane through the gaps.',
+  start(){ y=300; vy=0; gates=[]; sp=0; }, tap(x,yy,g){ flap(g); }, key(c,g){ if(c==='Space'||c==='ArrowUp'||c==='KeyW') flap(g); },
+  update(dt,g){ vy+=900*dt; y+=vy*dt; sp-=dt; if(sp<=0){ sp=1.45; gates.push({x:440,gy:Kit.rnd(150,470),done:false}); }
+    const gap=Math.max(120,165-g.score*1.5);
+    for(const q of gates){ q.x-=170*dt; if(!q.done&&q.x<80){ q.done=true; g.score++; g.beep(880,.06); }
+      if(q.x<118&&q.x+56>82&&(y-10<q.gy-gap/2||y+10>q.gy+gap/2)){ g.beep(120,.4,'sawtooth'); return g.over(); } q.gap=gap; }
+    gates=gates.filter(q=>q.x>-60); if(y>610||y<-30){ g.beep(120,.4,'sawtooth'); g.over(); } },
+  draw(c,g){ const gr=c.createLinearGradient(0,0,0,620); gr.addColorStop(0,'#101a2c'); gr.addColorStop(1,'#1d2b3f'); c.fillStyle=gr; c.fillRect(0,0,420,620);
+    for(const q of gates){ const gp=q.gap||160; c.fillStyle='#3a4856'; c.fillRect(q.x,0,56,q.gy-gp/2); c.fillRect(q.x,q.gy+gp/2,56,620); c.fillStyle='#f5b524'; c.fillRect(q.x,q.gy-gp/2-5,56,5); c.fillRect(q.x,q.gy+gp/2,56,5); }
+    c.save(); c.translate(100,y); c.rotate(Kit.clamp(vy/600,-.5,.9)); c.fillStyle='#f3f2ec'; c.beginPath(); c.moveTo(20,0); c.lineTo(-18,-12); c.lineTo(-10,0); c.lineTo(-18,12); c.closePath(); c.fill();
+    c.fillStyle='#b9c3c9'; c.beginPath(); c.moveTo(20,0); c.lineTo(-10,0); c.lineTo(-14,8); c.closePath(); c.fill(); c.restore(); }
+});
+})();
+</script>
+</body>
+</html>

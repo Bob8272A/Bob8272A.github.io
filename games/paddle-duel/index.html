@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Paddle Duel</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+let py, ay, b, me, ai; const PH=80;
+function serve(d){ b={x:320,y:200,vx:260*d,vy:Kit.rnd(-160,160)}; }
+Kit.game({ id:'paddle-duel', title:'Paddle Duel', w:640, h:400, unit:'Points', help:'Move your paddle with the mouse, W/S or the arrow keys. First to 7 wins.',
+  start(){ py=ay=200; me=ai=0; serve(1); },
+  update(dt,g){ if(g.up) py-=380*dt; else if(g.dn) py+=380*dt; else if(g.ptr.last!==g.ptr.y){ py=g.ptr.y; g.ptr.last=g.ptr.y; }
+    py=Kit.clamp(py,PH/2,400-PH/2);
+    const want=b.vx>0?b.y:200; ay+=Kit.clamp(want-ay,-(210+ai*6+me*14)*dt,(210+ai*6+me*14)*dt); ay=Kit.clamp(ay,PH/2,400-PH/2);
+    b.x+=b.vx*dt; b.y+=b.vy*dt;
+    if(b.y<8){b.y=8;b.vy=Math.abs(b.vy);} if(b.y>392){b.y=392;b.vy=-Math.abs(b.vy);}
+    if(b.vx<0&&b.x<34&&b.x>18&&Math.abs(b.y-py)<PH/2+8){ b.vx=Math.abs(b.vx)*1.06; b.vy+=(b.y-py)*5; g.beep(440,.05); }
+    if(b.vx>0&&b.x>606&&b.x<622&&Math.abs(b.y-ay)<PH/2+8){ b.vx=-Math.abs(b.vx)*1.06; b.vy+=(b.y-ay)*5; g.beep(330,.05); }
+    if(b.x<-20){ ai++; g.beep(150,.3,'sawtooth'); serve(1); } if(b.x>660){ me++; g.beep(880,.15); serve(-1); }
+    g.score=me; if(me>=7) g.win('You win!'); else if(ai>=7) g.over('You lose'); },
+  draw(c){ c.strokeStyle='#26313c'; c.setLineDash([8,10]); c.beginPath(); c.moveTo(320,0); c.lineTo(320,400); c.stroke(); c.setLineDash([]);
+    c.fillStyle='#f5b524'; c.fillRect(20,py-PH/2,12,PH); c.fillStyle='#4fc3f7'; c.fillRect(608,ay-PH/2,12,PH);
+    c.fillStyle='#f3f2ec'; c.beginPath(); c.arc(b.x,b.y,8,0,7); c.fill();
+    c.font='900 44px sans-serif'; c.textAlign='center'; c.fillStyle='#3a4755'; c.fillText(me,260,60); c.fillText(ai,380,60); c.textAlign='left'; }
+});
+})();
+</script>
+</body>
+</html>

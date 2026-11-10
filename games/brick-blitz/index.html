@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Brick Blitz</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+let px, ball, bricks, lives, level;
+const PW=84, cols=10, bw=46, bh=18;
+function build(){ bricks=[]; const rows=Math.min(9,4+level); for(let r=0;r<rows;r++)for(let c=0;c<cols;c++) bricks.push({x:10+c*bw,y:60+r*(bh+4),hp:r<2&&level>1?2:1,hue:r*38}); }
+function serve(){ ball={x:px,y:560,vx:0,vy:0,stuck:true}; }
+function launch(g){ if(ball.stuck){ ball.stuck=false; const s=300+level*25; ball.vx=s*.5*(Math.random()<.5?-1:1); ball.vy=-s; } }
+Kit.game({ id:'brick-blitz', title:'Brick Blitz', w:480, h:640, help:'Move with the mouse or arrow keys. Space or click launches the ball. Clear every brick.',
+  start(){ px=240; lives=3; level=1; build(); serve(); },
+  tap(x,y,g){ launch(g); }, key(c,g){ if(c==='Space') launch(g); },
+  update(dt,g){ if(g.left) px-=420*dt; else if(g.right) px+=420*dt; else if(g.ptr.down||g.ptr.moved!==g.ptr.x){ px += (g.ptr.x-px)*Math.min(1,dt*18); g.ptr.moved=g.ptr.x; }
+    px=Kit.clamp(px,PW/2,480-PW/2);
+    if(ball.stuck){ ball.x=px; return; }
+    for(let i=0;i<2;i++){ ball.x+=ball.vx*dt/2; ball.y+=ball.vy*dt/2;
+      if(ball.x<7){ball.x=7;ball.vx=Math.abs(ball.vx);} if(ball.x>473){ball.x=473;ball.vx=-Math.abs(ball.vx);}
+      if(ball.y<7){ball.y=7;ball.vy=Math.abs(ball.vy);}
+      if(ball.vy>0&&ball.y>572&&ball.y<590&&Math.abs(ball.x-px)<PW/2+7){ const s=Math.hypot(ball.vx,ball.vy), a=(ball.x-px)/(PW/2)*1.1; ball.vx=s*Math.sin(a); ball.vy=-s*Math.cos(a); ball.y=572; g.beep(330,.05); }
+      for(const b of bricks){ if(b.hp>0&&ball.x>b.x-7&&ball.x<b.x+bw+3&&ball.y>b.y-7&&ball.y<b.y+bh+7){ b.hp--; g.score+=10; g.beep(520+b.hue,.05);
+          const ox=Math.min(ball.x-(b.x-7),b.x+bw+3-ball.x), oy=Math.min(ball.y-(b.y-7),b.y+bh+7-ball.y); if(ox<oy) ball.vx*=-1; else ball.vy*=-1; break; } } }
+    if(ball.y>650){ lives--; g.beep(140,.3,'sawtooth'); if(lives<=0) return g.over(); serve(); }
+    if(bricks.every(b=>b.hp<=0)){ level++; g.score+=100; build(); serve(); } },
+  draw(c,g){ for(const b of bricks) if(b.hp>0){ c.fillStyle=`hsl(${b.hue},75%,${b.hp>1?38:58}%)`; c.fillRect(b.x,b.y,bw-4,bh); }
+    c.fillStyle='#f3f2ec'; c.fillRect(px-PW/2,580,PW,10); c.fillStyle='#f5b524'; c.beginPath(); c.arc(ball.x,ball.y,7,0,7); c.fill();
+    c.fillStyle='#a7b1b8'; c.font='700 14px monospace'; c.fillText('Lives '+lives+'   Level '+level,10,26); }
+});
+})();
+</script>
+</body>
+</html>

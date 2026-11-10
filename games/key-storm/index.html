@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Key Storm</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+const WORDS='road lane exit ramp turn fast gear tire fuel dash horn sign mile toll park ride race drift brake speed truck coast merge route cargo wheel motor pilot orbit comet laser pixel robot magic storm cloud flame frost stone river ocean eagle tiger piano guitar candle planet rocket jungle castle bridge anchor harbor signal tunnel engine highway mirror shadow thunder lantern compass diamond captain'.split(' ');
+let words, target, typed, timer, lives;
+Kit.game({ id:'key-storm', title:'Key Storm', w:640, h:480, typing:true, help:'Type the falling words before they reach the bottom. Start typing a word to lock on to it. Three misses ends the game.',
+  start(){ words=[]; target=null; typed=0; timer=.5; lives=3; },
+  key(code,g,ch){ if(!ch||ch.length!==1) return; ch=ch.toLowerCase(); if(!target){ target=words.filter(w=>w.t[0]===ch).sort((a,b)=>b.y-a.y)[0]||null; typed=0; }
+    if(target&&target.t[typed]===ch){ typed++; g.beep(600+typed*30,.03); if(typed===target.t.length){ g.score+=target.t.length*10; target.dead=true; target=null; g.beep(990,.08); } } else g.beep(160,.05,'sawtooth'); },
+  update(dt,g){ timer-=dt; if(timer<=0){ timer=Math.max(.7,2-g.t/60); let t; do{ t=Kit.pick(WORDS); }while(words.some(w=>w.t[0]===t[0])&&words.length<12); words.push({t,x:Kit.rnd(30,520),y:-10,v:Kit.rnd(28,44)+g.t*.5}); }
+    for(const w of words){ w.y+=w.v*dt; if(w.y>470){ w.dead=true; lives--; if(target===w) target=null; g.beep(110,.3,'sawtooth'); } }
+    words=words.filter(w=>!w.dead); if(lives<=0) g.over(); },
+  draw(c){ c.font='700 22px monospace'; for(const w of words){ const on=w===target; c.fillStyle=on?'#f5b524':'#f3f2ec'; c.fillText(w.t,w.x,w.y); if(on){ c.fillStyle='#3fb374'; c.fillText(w.t.slice(0,typed),w.x,w.y); } }
+    c.fillStyle='#e2362c'; for(let i=0;i<lives;i++) c.fillRect(14+i*22,14,16,8); c.fillStyle='#7a1f1a'; c.fillRect(0,474,640,6); }
+});
+})();
+</script>
+</body>
+</html>

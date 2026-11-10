@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Sky Shield</title>
+</head>
+<body>
+<script src="../../assets/kit.js"></script>
+<script>
+(function () {
+let inc, mine, booms, towns, timer, wave, left;
+Kit.game({ id:'sky-shield', title:'Sky Shield', w:640, h:480, help:'Click or tap to launch a defensive burst at that point. Protect the six towns from incoming fire.',
+  start(){ inc=[]; mine=[]; booms=[]; towns=[1,1,1,1,1,1]; timer=1; wave=1; left=8; },
+  tap(x,y,g){ if(y<430){ mine.push({x:320,y:450,tx:x,ty:y}); g.beep(500,.05); } },
+  update(dt,g){ timer-=dt; if(timer<=0&&left>0){ timer=Kit.rnd(.5,1.6)/(.8+wave*.2); left--; const alive=towns.map((t,i)=>t?i:-1).filter(i=>i>=0); const ti=Kit.pick(alive.length?alive:[0]); const sx=Kit.rnd(640); inc.push({x:sx,y:0,sx,tx:70+ti*100,ti,sp:35+wave*9}); }
+    for(const m of inc){ const d=Math.hypot(m.tx-m.x,440-m.y); m.x+=(m.tx-m.x)/d*m.sp*dt; m.y+=(440-m.y)/d*m.sp*dt;
+      if(m.y>=436){ m.dead=true; towns[m.ti]=0; booms.push({x:m.x,y:440,r:0,max:28,t:0}); g.beep(90,.4,'sawtooth'); }
+      for(const b of booms) if(!m.dead&&Math.hypot(b.x-m.x,b.y-m.y)<b.r){ m.dead=true; g.score+=25; booms.push({x:m.x,y:m.y,r:0,max:26,t:0}); g.beep(200,.1,'sawtooth'); } }
+    for(const m of mine){ const d=Math.hypot(m.tx-m.x,m.ty-m.y); if(d<8){ m.dead=true; booms.push({x:m.tx,y:m.ty,r:0,max:42,t:0}); g.beep(160,.15,'sawtooth'); } else { m.x+=(m.tx-m.x)/d*460*dt; m.y+=(m.ty-m.y)/d*460*dt; } }
+    for(const b of booms){ b.t+=dt; b.r=b.max*Math.sin(Math.min(1,b.t/1.1)*Math.PI); }
+    inc=inc.filter(m=>!m.dead); mine=mine.filter(m=>!m.dead); booms=booms.filter(b=>b.t<1.1);
+    if(!towns.some(t=>t)) return g.over('Towns lost'); if(left<=0&&!inc.length){ wave++; left=6+wave*3; g.score+=towns.filter(t=>t).length*20; timer=1.5; } },
+  draw(c){ c.fillStyle='#1f2a22'; c.fillRect(0,440,640,40); towns.forEach((t,i)=>{ if(t){ c.fillStyle='#4fc3f7'; c.fillRect(55+i*100,424,10,16); c.fillRect(67+i*100,416,10,24); c.fillRect(79+i*100,428,8,12); } else { c.fillStyle='#3a2a22'; c.fillRect(55+i*100,436,32,4); } });
+    c.fillStyle='#f5b524'; c.beginPath(); c.moveTo(320,436); c.lineTo(334,460); c.lineTo(306,460); c.fill();
+    c.lineWidth=2; for(const m of inc){ c.strokeStyle='#e2362c'; c.beginPath(); c.moveTo(m.sx,0); c.lineTo(m.x,m.y); c.stroke(); c.fillStyle='#fff'; c.fillRect(m.x-2,m.y-2,4,4); }
+    for(const m of mine){ c.strokeStyle='#4fc3f7'; c.beginPath(); c.moveTo(320,450); c.lineTo(m.x,m.y); c.stroke(); c.strokeStyle='#a7b1b8'; c.strokeRect(m.tx-4,m.ty-4,8,8); }
+    for(const b of booms){ c.fillStyle=`hsla(${40-b.t*30},95%,60%,.85)`; c.beginPath(); c.arc(b.x,b.y,Math.max(0,b.r),0,7); c.fill(); } }
+});
+})();
+</script>
+</body>
+</html>
