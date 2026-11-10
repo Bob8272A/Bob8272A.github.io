@@ -9,28 +9,40 @@
 <script src="../../assets/kit.js"></script>
 <script>
 (function () {
-const CO=7, RO=6, C=64; let bd, turn, think, lastCol, wins;
+const CO=7, RO=6, C=64, DEPTH={easy:2,normal:4,hard:6};
+let bd, turn, think, fall, winLine, endT, endMsg, col, streak=0, won;
 const rowFor=(b,c)=>{ for(let r=RO-1;r>=0;r--) if(!b[r*CO+c]) return r; return -1; };
-function winner(b){ const D=[[1,0],[0,1],[1,1],[1,-1]]; for(let r=0;r<RO;r++)for(let c=0;c<CO;c++){ const v=b[r*CO+c]; if(!v) continue; for(const [dx,dy] of D){ let k=1; while(k<4){ const x=c+dx*k,y=r+dy*k; if(x<0||y<0||x>=CO||y>=RO||b[y*CO+x]!==v) break; k++; } if(k===4) return v; } } return b.every(v=>v)?3:0; }
-function score(b){ let s=0; const D=[[1,0],[0,1],[1,1],[1,-1]]; for(let r=0;r<RO;r++)for(let c=0;c<CO;c++)for(const [dx,dy] of D){ const ex=c+dx*3, ey=r+dy*3; if(ex<0||ey<0||ex>=CO||ey>=RO) continue; let a=0,p=0; for(let k=0;k<4;k++){ const v=b[(r+dy*k)*CO+c+dx*k]; if(v===2)a++; else if(v===1)p++; } if(a&&p) continue; s+=[0,1,6,40,0][a]-[0,1,6,45,0][p]; } for(let r=0;r<RO;r++) if(b[r*CO+3]===2) s+=3; return s; }
-function search(b,d,al,be,me){ const w=winner(b); if(w===2) return 10000+d; if(w===1) return -10000-d; if(w===3) return 0; if(!d) return score(b);
-  let best=me?-1e9:1e9; for(const c of [3,2,4,1,5,0,6]){ const r=rowFor(b,c); if(r<0) continue; b[r*CO+c]=me?2:1; const v=search(b,d-1,al,be,!me); b[r*CO+c]=0;
-    if(me){ best=Math.max(best,v); al=Math.max(al,v); } else { best=Math.min(best,v); be=Math.min(be,v); } if(al>=be) break; } return best; }
-function aiMove(){ let bv=-1e9, bc=3; for(const c of [3,2,4,1,5,0,6]){ const r=rowFor(bd,c); if(r<0) continue; bd[r*CO+c]=2; const v=search(bd,4,-1e9,1e9,false)+Math.random(); bd[r*CO+c]=0; if(v>bv){ bv=v; bc=c; } } return bc; }
-function drop(c,who,g){ const r=rowFor(bd,c); if(r<0) return false; bd[r*CO+c]=who; lastCol=c; g.beep(who===1?520:380,.06,'triangle'); const w=winner(bd);
-  if(w===1){ g.score=1; g.win('You win!'); } else if(w===2){ g.noBest=true; g.over('Computer wins'); } else if(w===3){ g.noBest=true; g.over('Draw'); } return true; }
-function disc(c,x,y,v){ const A=v===1?['#ffe37a','#f5b524','#b87d08']:['#ff8a7a','#e2362c','#9a1f18']; c.fillStyle=Kit.rgrad(c,x-7,y-8,30,A[0],A[1],A[2]); c.beginPath(); c.arc(x,y,25,0,7); c.fill(); c.strokeStyle=A[2]; c.lineWidth=2; c.beginPath(); c.arc(x,y,17,0,7); c.stroke(); c.fillStyle='rgba(255,255,255,.45)'; c.beginPath(); c.ellipse(x-8,y-12,8,4,-.6,0,7); c.fill(); }
-Kit.game({ id:'four-across', title:'Four Across', w:480, h:480, unit:'Win', help:'Click a column to drop your yellow disc. Line up four in a row, column or diagonal before the computer does.',
-  start(){ bd=Array(CO*RO).fill(0); turn=1; think=0; },
-  tap(x,y,g){ if(turn!==1) return; const c=Math.floor((x-16)/C); if(c<0||c>=CO) return; if(drop(c,1,g)&&g.playing){ turn=2; think=.45; } },
-  update(dt,g){ if(turn===2){ think-=dt; if(think<=0){ drop(aiMove(),2,g); turn=1; } } },
-  draw(c,g){ c.fillStyle=Kit.grad(c,0,0,0,480,'#1a2233','#0b0f14'); c.fillRect(0,0,480,480); c.fillStyle='#3a2a1c'; c.fillRect(0,462,480,18);
-    const hc=Math.floor((g.ptr.x-16)/C); if(turn===1&&hc>=0&&hc<CO&&g.playing){ c.globalAlpha=.75; disc(c,16+hc*C+C/2,40,1); c.globalAlpha=1; c.fillStyle='rgba(255,255,255,.06)'; c.fillRect(16+hc*C,74,C,396); }
-    c.fillStyle='#0d1f3d'; c.beginPath(); c.roundRect(14,80,460,396,16); c.fill(); c.fillStyle=Kit.grad(c,0,74,0,470,'#2f6fd0','#1b458c'); c.beginPath(); c.roundRect(10,74,460,396,16); c.fill();
-    c.fillStyle='rgba(255,255,255,.18)'; c.beginPath(); c.roundRect(14,77,452,6,3); c.fill();
-    for(let r=0;r<RO;r++)for(let k=0;k<CO;k++){ const v=bd[r*CO+k], x=16+k*C+C/2, y=84+r*C+C/2; c.fillStyle='#0c1930'; c.beginPath(); c.arc(x,y+2,27,0,7); c.fill(); c.fillStyle='#0b0f14'; c.beginPath(); c.arc(x,y,25,0,7); c.fill(); if(v) disc(c,x,y,v);
-      if(v&&k===lastCol&&rowFor(bd,k)===r-1){ c.strokeStyle='#fff'; c.lineWidth=2; c.beginPath(); c.arc(x,y,27,0,7); c.stroke(); } }
-    c.fillStyle='#a7b1b8'; c.font='700 14px monospace'; c.textAlign='right'; c.fillText(turn===1?'Your move':'Computer is thinking...',466,60); c.textAlign='left'; }
+const D=[[1,0],[0,1],[1,1],[1,-1]];
+function winner(b,line){ for(let r=0;r<RO;r++)for(let c=0;c<CO;c++){ const v=b[r*CO+c]; if(!v) continue; for(const [dx,dy] of D){ let k=1; while(k<4){ const x=c+dx*k,y=r+dy*k; if(x<0||y<0||x>=CO||y>=RO||b[y*CO+x]!==v) break; k++; } if(k===4){ if(line) for(let i=0;i<4;i++) line.push((r+dy*i)*CO+c+dx*i); return v; } } } return b.every((v)=>v)?3:0; }
+function evalB(b){ let s=0; for(let r=0;r<RO;r++)for(let c=0;c<CO;c++)for(const [dx,dy] of D){ const ex=c+dx*3, ey=r+dy*3; if(ex<0||ey<0||ex>=CO||ey>=RO) continue; let a=0,p=0; for(let k=0;k<4;k++){ const v=b[(r+dy*k)*CO+c+dx*k]; if(v===2)a++; else if(v===1)p++; } if(a&&p) continue; s+=[0,1,6,40,0][a]-[0,1,6,45,0][p]; } for(let r=0;r<RO;r++) if(b[r*CO+3]===2) s+=3; return s; }
+function search(b,d,al,be,me){ const w=winner(b); if(w===2) return 10000+d; if(w===1) return -10000-d; if(w===3) return 0; if(!d) return evalB(b);
+  let best=me?-1e9:1e9; for(const c of [3,2,4,1,5,0,6]){ const r=rowFor(b,c); if(r<0) continue; b[r*CO+c]=me?2:1; const v=search(b,d-1,al,be,!me); b[r*CO+c]=0; if(me){ best=Math.max(best,v); al=Math.max(al,v); } else { best=Math.min(best,v); be=Math.min(be,v); } if(al>=be) break; } return best; }
+function aiMove(g){ const d=DEPTH[g.mode]||4; let bv=-1e9, bc=3; for(const c of [3,2,4,1,5,0,6]){ const r=rowFor(bd,c); if(r<0) continue; bd[r*CO+c]=2; const v=search(bd,d-1,-1e9,1e9,false)+Math.random()*(g.mode==='easy'?30:1); bd[r*CO+c]=0; if(v>bv){ bv=v; bc=c; } } return bc; }
+function drop(c,who,g){ if(fall||endT>0) return false; const r=rowFor(bd,c); if(r<0){ g.sfx('bad'); return false; } bd[r*CO+c]=who; fall={c,r,y:30,vy:0,who}; g.sfx('whoosh'); return true; }
+function landed(g){ const {c,r,who}=fall; fall=null; g.sfx('thud'); g.burst(16+c*C+C/2,84+r*C+C/2+24,who===1?'#f5b524':'#e2362c',6,80); const line=[], w=winner(bd,line), two=g.mode==='two';
+  if(w){ winLine=line; endT=1.5; won=false; if(w===3){ endMsg='Draw'; } else if(two){ endMsg=w===1?'Yellow wins!':'Red wins!'; won=true; } else if(w===1){ endMsg='You win!'; won=true; streak++; } else { endMsg='Computer wins'; streak=0; } g.sfx(w===3?'click':'level'); return; }
+  turn=3-who; if(turn===2&&!two) think=.5; }
+Kit.game({ id:'four-across', title:'Four Across', w:480, h:480, unit:'Win streak',
+  modes:[['normal','vs Computer'],['easy','Easy'],['hard','Hard'],['two','2 Players']],
+  help:'Take turns dropping discs. The first to line up four in a row, column or diagonal wins. Yellow always moves first. Your win streak against the computer is your score.',
+  keys:[['Drop a disc','Click a column, or ← → then Space'],['Jump to a column','1 to 7'],['Pause','P or Esc']],
+  start(g){ bd=Array(CO*RO).fill(0); turn=1; think=0; fall=null; winLine=[]; endT=0; col=3; if(g.mode==='two') streak=0; g.score=streak; },
+  tap(x,y,g){ const c=Math.floor((x-16)/C); if(c<0||c>=CO) return; col=c; if(turn===1||g.mode==='two') drop(c,turn,g); },
+  key(k,g){ if(k==='ArrowLeft'||k==='KeyA') col=Math.max(0,col-1); if(k==='ArrowRight'||k==='KeyD') col=Math.min(CO-1,col+1); const n='1234567'.indexOf(k.replace('Digit','')); if(k.startsWith('Digit')&&n>=0) col=n;
+    if((k==='Space'||k==='ArrowDown'||k==='Enter'||(k.startsWith('Digit')&&n>=0))&&(turn===1||g.mode==='two')) drop(col,turn,g); },
+  update(dt,g){ g.score=streak; g.stats=[['Discs played',bd.filter((v)=>v).length]];
+    if(g.ptr.lx!==g.ptr.x){ const c=Math.floor((g.ptr.x-16)/C); if(c>=0&&c<CO) col=c; g.ptr.lx=g.ptr.x; }
+    if(fall){ fall.vy+=2600*dt; fall.y+=fall.vy*dt; const ty=84+fall.r*C+C/2; if(fall.y>=ty) landed(g); return; }
+    if(endT>0){ endT-=dt; if(endT<=0){ if(!won||g.mode==='two') g.noBest=g.mode==='two'||streak===0; if(won) g.win(endMsg); else g.over(endMsg); } return; }
+    if(turn===2&&g.mode!=='two'){ think-=dt; if(think<=0) drop(aiMove(g),2,g); } },
+  draw(c,g){ const disc=(x,y,v,a)=>{ const A=v===1?['#ffe37a','#f5b524','#b87d08']:['#ff8a7a','#e2362c','#9a1f18']; c.globalAlpha=a||1; c.fillStyle=Kit.rgrad(c,x-7,y-8,30,A[0],A[1],A[2]); c.beginPath(); c.arc(x,y,25,0,7); c.fill(); c.strokeStyle=A[2]; c.lineWidth=2; c.beginPath(); c.arc(x,y,17,0,7); c.stroke(); c.fillStyle='rgba(255,255,255,.45)'; c.beginPath(); c.ellipse(x-8,y-12,8,4,-.6,0,7); c.fill(); c.globalAlpha=1; };
+    c.fillStyle=Kit.grad(c,0,0,0,480,'#1a2233','#0b0f14'); c.fillRect(0,0,480,480); c.fillStyle='#3a2a1c'; c.fillRect(0,468,480,12);
+    const mine=(turn===1||g.mode==='two')&&!fall&&endT<=0&&g.playing; if(mine){ disc(16+col*C+C/2,40+Math.sin(g.t*5)*3,turn,.85); c.fillStyle='rgba(255,255,255,.07)'; c.fillRect(16+col*C,74,C,396); const r=rowFor(bd,col); if(r>=0){ c.strokeStyle=turn===1?'rgba(245,181,36,.6)':'rgba(226,54,44,.6)'; c.lineWidth=3; c.setLineDash([5,5]); c.beginPath(); c.arc(16+col*C+C/2,84+r*C+C/2,23,0,7); c.stroke(); c.setLineDash([]); } }
+    for(let r=0;r<RO;r++)for(let k=0;k<CO;k++){ const v=bd[r*CO+k]; if(v&&!(fall&&fall.c===k&&fall.r===r)) disc(16+k*C+C/2,84+r*C+C/2,v); } if(fall) disc(16+fall.c*C+C/2,fall.y,fall.who);
+    c.save(); c.beginPath(); c.roundRect(10,74,460,396,16); for(let r=0;r<RO;r++)for(let k=0;k<CO;k++){ const x=16+k*C+C/2, y=84+r*C+C/2; c.moveTo(x+25,y); c.arc(x,y,25,0,6.2832,true); } c.fillStyle=Kit.grad(c,0,74,0,470,'#2f6fd0','#1b458c'); c.fill('evenodd'); c.restore();
+    c.strokeStyle='#143263'; c.lineWidth=3; for(let r=0;r<RO;r++)for(let k=0;k<CO;k++){ c.beginPath(); c.arc(16+k*C+C/2,84+r*C+C/2,26,0,7); c.stroke(); } c.fillStyle='rgba(255,255,255,.18)'; c.beginPath(); c.roundRect(14,77,452,6,3); c.fill();
+    if(winLine.length){ const a=winLine[0], z=winLine[3]; c.strokeStyle='#fff'; c.lineWidth=6; c.lineCap='round'; c.shadowColor='#fff'; c.shadowBlur=16; c.beginPath(); c.moveTo(16+(a%CO)*C+C/2,84+Math.floor(a/CO)*C+C/2); c.lineTo(16+(z%CO)*C+C/2,84+Math.floor(z/CO)*C+C/2); c.stroke(); c.shadowBlur=0; }
+    const two=g.mode==='two'; Kit.text(c,endT>0?endMsg:two?(turn===1?'Yellow to move':'Red to move'):(turn===1?'Your move':'Computer is thinking...'),466,28,14,turn===1?'#f5b524':'#ff8a7a','right'); if(!two) Kit.text(c,'Streak '+streak,14,28,14,'#a7b1b8'); }
 });
 })();
 </script>

@@ -9,31 +9,53 @@
 <script src="../../assets/kit.js"></script>
 <script>
 (function () {
-let inc, mine, booms, towns, timer, wave, left;
-Kit.game({ id:'sky-shield', title:'Sky Shield', w:640, h:480, help:'Click or tap to launch a defensive burst at that point. Protect the six towns from incoming fire.',
-  start(){ inc=[]; mine=[]; booms=[]; towns=[1,1,1,1,1,1]; timer=1; wave=1; left=8; },
-  tap(x,y,g){ if(y<430){ mine.push({x:320,y:450,tx:x,ty:y}); g.beep(500,.05); } },
-  update(dt,g){ timer-=dt; if(timer<=0&&left>0){ timer=Kit.rnd(.5,1.6)/(.8+wave*.2); left--; const alive=towns.map((t,i)=>t?i:-1).filter(i=>i>=0); const ti=Kit.pick(alive.length?alive:[0]); const sx=Kit.rnd(640); inc.push({x:sx,y:0,sx,tx:70+ti*100,ti,sp:35+wave*9}); }
-    for(const m of inc){ const d=Math.hypot(m.tx-m.x,440-m.y); m.x+=(m.tx-m.x)/d*m.sp*dt; m.y+=(440-m.y)/d*m.sp*dt;
-      if(m.y>=436){ m.dead=true; towns[m.ti]=0; g.shake(10); g.burst(m.x,436,'#f08a52',18,200); booms.push({x:m.x,y:440,r:0,max:28,t:0}); g.beep(90,.4,'sawtooth'); }
-      for(const b of booms) if(!m.dead&&Math.hypot(b.x-m.x,b.y-m.y)<b.r){ m.dead=true; g.score+=25; booms.push({x:m.x,y:m.y,r:0,max:26,t:0}); g.beep(200,.1,'sawtooth'); } }
-    for(const m of mine){ const d=Math.hypot(m.tx-m.x,m.ty-m.y); if(d<8){ m.dead=true; booms.push({x:m.tx,y:m.ty,r:0,max:42,t:0}); g.beep(160,.15,'sawtooth'); } else { m.x+=(m.tx-m.x)/d*460*dt; m.y+=(m.ty-m.y)/d*460*dt; } }
-    for(const b of booms){ b.t+=dt; b.r=b.max*Math.sin(Math.min(1,b.t/1.1)*Math.PI); }
-    inc=inc.filter(m=>!m.dead); mine=mine.filter(m=>!m.dead); booms=booms.filter(b=>b.t<1.1);
-    if(!towns.some(t=>t)) return g.over('Towns lost'); if(left<=0&&!inc.length){ wave++; left=6+wave*3; g.score+=towns.filter(t=>t).length*20; timer=1.5; } },
+const MODE={easy:.75,normal:1,hard:1.3}, BX=[60,320,580], TX=[130,200,270,370,440,510];
+let inc, mine, booms, towns, bases, ammo, timer, wave, left, planes, tally, tallyT;
+function fire(x,y,g,pick){ if(tallyT>0||y>420) return; let best=-1, bd=1e9; for(let i=0;i<3;i++){ if(pick!==undefined&&i!==pick) continue; if(bases[i]&&ammo[i]>0){ const d=Math.abs(BX[i]-x); if(d<bd){ bd=d; best=i; } } }
+  if(best<0){ g.sfx('bad'); return; } ammo[best]--; mine.push({x:BX[best],y:432,sx:BX[best],tx:x,ty:y}); g.sfx('shoot'); }
+function boom(x,y,max,g,good){ booms.push({x,y,r:0,max,t:0,good}); }
+function newWave(g){ left=7+wave*3; timer=1.2; ammo=[10,10,10]; bases=[1,1,1]; planes=[]; }
+Kit.game({ id:'sky-shield', title:'Sky Shield', w:640, h:480,
+  modes:[['normal','Normal'],['easy','Easy'],['hard','Hard']],
+  help:'Three launchers, ten interceptors each per wave. Aim ahead of incoming fire: bursts take a moment to arrive, then expand and chain. Some warheads split in mid-air and bombers cross overhead. Lose all six towns and it is over.',
+  keys:[['Launch from nearest base','Click or tap'],['Launch from left · centre · right','A · S · D (aim with the mouse)'],['Pause','P or Esc']],
+  start(g){ inc=[]; mine=[]; booms=[]; towns=[1,1,1,1,1,1]; wave=1; tally=null; tallyT=0; newWave(g); },
+  tap(x,y,g){ fire(x,y,g); }, key(c,g){ const i={KeyA:0,KeyS:1,KeyD:2}[c]; if(i!==undefined) fire(g.ptr.x,g.ptr.y,g,i); },
+  update(dt,g){ const m=MODE[g.mode]; g.stats=[['Wave',wave],['Towns saved',towns.filter((t)=>t).length]];
+    for(const b of booms){ b.t+=dt; b.r=b.max*Math.sin(Math.min(1,b.t/1.1)*Math.PI); } booms=booms.filter((b)=>b.t<1.1);
+    if(tallyT>0){ tallyT-=dt; if(tallyT<=0){ wave++; if(wave%3===1){ const i=towns.indexOf(0); if(i>=0){ towns[i]=1; g.pop(TX[i],400,'Town rebuilt','#7fd0ff'); } } tally=null; newWave(g); g.banner('Wave '+wave,'',1); } return; }
+    timer-=dt; if(timer<=0&&left>0){ timer=Kit.rnd(.45,1.5)/(.8+wave*.18)/m; left--; const targets=[...TX.map((x,i)=>towns[i]?x:null),...BX.map((x,i)=>bases[i]?x:null)].filter((x)=>x!==null); const sx=Kit.rnd(20,620);
+      inc.push({x:sx,y:0,sx,tx:Kit.pick(targets.length?targets:TX),sp:(34+wave*8)*m,split:wave>=2&&Math.random()<.22+wave*.02,sy:Kit.rnd(120,230)});
+      if(wave>=3&&planes.length<1&&Math.random()<.2){ const d=Math.random()<.5?1:-1; planes.push({x:d>0?-40:680,y:Kit.rnd(70,150),vx:d*90*m,cd:1.2}); } }
+    for(const p of planes){ p.x+=p.vx*dt; p.cd-=dt; if(p.cd<=0&&p.x>40&&p.x<600){ p.cd=1.6; const targets=TX.filter((x,i)=>towns[i]); inc.push({x:p.x,y:p.y,sx:p.x,sy0:p.y,tx:Kit.pick(targets.length?targets:TX),sp:(50+wave*8)*m,split:false}); }
+      for(const b of booms) if(b.good&&Math.hypot(b.x-p.x,b.y-p.y)<b.r+12){ p.dead=true; g.score+=100; g.sfx('boom'); boom(p.x,p.y,34,g,true); g.pop(p.x,p.y-20,'+100','#f5b524'); } }
+    planes=planes.filter((p)=>!p.dead&&p.x>-60&&p.x<700);
+    for(const q of inc){ const d=Math.hypot(q.tx-q.x,436-q.y); q.x+=(q.tx-q.x)/d*q.sp*dt; q.y+=(436-q.y)/d*q.sp*dt;
+      if(q.split&&q.y>q.sy){ q.dead=true; g.sfx('tick'); const alive=[...TX.filter((x,i)=>towns[i]),...BX.filter((x,i)=>bases[i])]; for(let k=0;k<3;k++) inc.push({x:q.x,y:q.y,sx:q.x,sy0:q.y,tx:Kit.pick(alive.length?alive:TX),sp:q.sp*1.1,split:false}); continue; }
+      if(q.y>=432){ q.dead=true; boom(q.x,436,30,g,false); g.sfx('boom'); g.shake(10); const ti=TX.indexOf(q.tx), bi=BX.indexOf(q.tx); if(ti>=0&&towns[ti]){ towns[ti]=0; g.burst(q.x,430,['#f08a52','#39434e'],22,220,{up:120}); } if(bi>=0&&bases[bi]){ bases[bi]=0; ammo[bi]=0; g.burst(q.x,430,['#f08a52','#8a939a'],22,220,{up:120}); } continue; }
+      for(const b of booms) if(b.good&&Math.hypot(b.x-q.x,b.y-q.y)<b.r){ q.dead=true; g.score+=25; g.sfx('hit'); boom(q.x,q.y,26,g,true); g.pop(q.x,q.y-12,'+25','#fff3b0',12); break; } }
+    for(const q of mine){ const d=Math.hypot(q.tx-q.x,q.ty-q.y); if(d<9){ q.dead=true; boom(q.tx,q.ty,44,g,true); g.sfx('thud'); } else { q.x+=(q.tx-q.x)/d*480*dt; q.y+=(q.ty-q.y)/d*480*dt; } }
+    inc=inc.filter((q)=>!q.dead); mine=mine.filter((q)=>!q.dead);
+    if(!towns.some((t)=>t)){ g.shake(16); return g.over('All towns lost'); }
+    if(left<=0&&!inc.length&&!mine.length&&!planes.length){ const a=ammo.reduce((x,y)=>x+y,0), t=towns.filter((x)=>x).length; tally={a,t,pts:a*5+t*100}; g.score+=tally.pts; tallyT=3; g.sfx('level'); } },
   draw(c,g){ c.fillStyle=Kit.grad(c,0,0,0,480,'#070a1c','#1a1440','#4a2a4a'); c.fillRect(0,0,640,480); Kit.stars(c,640,400,0,80);
-    c.fillStyle='#e9e4d0'; c.beginPath(); c.arc(90,80,26,0,7); c.fill(); c.fillStyle='#070a1c'; c.beginPath(); c.arc(100,74,23,0,7); c.fill();
+    c.fillStyle='#e9e4d0'; c.beginPath(); c.arc(90,80,26,0,7); c.fill(); c.fillStyle='#0a0d22'; c.beginPath(); c.arc(100,74,23,0,7); c.fill();
     c.fillStyle='#1c1830'; c.beginPath(); c.moveTo(0,440); for(let x=0;x<=640;x+=40) c.lineTo(x,400-Math.abs(Math.sin(x*.011))*50); c.lineTo(640,440); c.fill();
     c.fillStyle='#15241c'; c.fillRect(0,438,640,42); c.fillStyle='#1f3a2a'; c.fillRect(0,438,640,4);
-    towns.forEach((t,i)=>{ const x=52+i*100; if(t){ const B=[[0,22,12],[13,34,11],[25,26,9],[35,16,8]]; for(const [dx,h,w] of B){ c.fillStyle='#2a3a5c'; c.fillRect(x+dx,440-h,w,h); c.fillStyle='#3c4f78'; c.fillRect(x+dx,440-h,w,2); c.fillStyle='#ffd27a'; for(let wy=440-h+5;wy<436;wy+=7) for(let wx=x+dx+2;wx<x+dx+w-2;wx+=4) if((wx+wy+i)%3) c.fillRect(wx,wy,2,3); }
-        c.strokeStyle='rgba(120,200,255,.25)'; c.lineWidth=1.500; c.beginPath(); c.arc(x+22,440,34,Math.PI,0); c.stroke(); }
-      else { c.fillStyle='#2a2220'; c.beginPath(); c.moveTo(x,440); c.lineTo(x+8,430); c.lineTo(x+15,437); c.lineTo(x+24,428); c.lineTo(x+33,436); c.lineTo(x+44,440); c.fill(); c.fillStyle='rgba(240,138,82,.5)'; c.beginPath(); c.arc(x+22,434,3+Math.sin(g.t*8+i)*1.500,0,7); c.fill(); } });
-    c.fillStyle='#39434e'; c.beginPath(); c.moveTo(296,440); c.lineTo(306,424); c.lineTo(334,424); c.lineTo(344,440); c.fill(); c.fillStyle='#69747e'; c.beginPath(); c.arc(320,424,11,Math.PI,0); c.fill();
-    const ta=Math.atan2(g.ptr.y-424,g.ptr.x-320); c.save(); c.translate(320,422); c.rotate(Math.min(-.2,Math.max(-2.940,ta))); c.fillStyle='#a7b1b8'; c.fillRect(0,-3,26,6); c.fillStyle='#f5b524'; c.fillRect(22,-4,5,8); c.restore();
-    c.lineWidth=2; for(const m of inc){ c.strokeStyle=Kit.grad(c,m.sx,0,m.x,m.y,'rgba(226,54,44,0)','rgba(255,120,90,.9)'); c.beginPath(); c.moveTo(m.sx,0); c.lineTo(m.x,m.y); c.stroke(); c.shadowColor='#f55'; c.shadowBlur=10; c.fillStyle='#fff3e0'; c.beginPath(); c.arc(m.x,m.y,3,0,7); c.fill(); c.shadowBlur=0; }
-    for(const m of mine){ c.strokeStyle='rgba(120,220,255,.8)'; c.beginPath(); c.moveTo(320,424); c.lineTo(m.x,m.y); c.stroke(); c.fillStyle='#fff'; c.beginPath(); c.arc(m.x,m.y,2.500,0,7); c.fill(); c.strokeStyle='#f5b524'; c.lineWidth=1.500; c.beginPath(); c.moveTo(m.tx-6,m.ty-6); c.lineTo(m.tx+6,m.ty+6); c.moveTo(m.tx+6,m.ty-6); c.lineTo(m.tx-6,m.ty+6); c.stroke(); c.lineWidth=2; }
-    for(const b of booms){ const r=Math.max(0,b.r); c.fillStyle=Kit.rgrad(c,b.x,b.y,r||1,'rgba(255,255,255,.95)','rgba(255,214,102,.9)','rgba(240,110,60,.75)','rgba(226,54,44,0)'); c.beginPath(); c.arc(b.x,b.y,r,0,7); c.fill(); }
-    c.strokeStyle='rgba(243,242,236,.6)'; c.lineWidth=1.500; c.beginPath(); c.arc(g.ptr.x,g.ptr.y,9,0,7); c.moveTo(g.ptr.x-14,g.ptr.y); c.lineTo(g.ptr.x+14,g.ptr.y); c.moveTo(g.ptr.x,g.ptr.y-14); c.lineTo(g.ptr.x,g.ptr.y+14); c.stroke(); }
+    towns.forEach((t,i)=>{ const x=TX[i]-22; if(t){ for(const [dx,h,w] of [[0,22,12],[13,34,11],[25,26,9],[35,16,8]]){ c.fillStyle='#2a3a5c'; c.fillRect(x+dx,440-h,w,h); c.fillStyle='#3c4f78'; c.fillRect(x+dx,440-h,w,2); c.fillStyle='#ffd27a'; for(let wy=440-h+5;wy<436;wy+=7) for(let wx=x+dx+2;wx<x+dx+w-2;wx+=4) if((Math.floor(wx)+wy+i)%3) c.fillRect(wx,wy,2,3); }
+        c.strokeStyle='rgba(120,200,255,.25)'; c.lineWidth=1.5; c.beginPath(); c.arc(x+22,440,34,Math.PI,0); c.stroke(); }
+      else { c.fillStyle='#2a2220'; c.beginPath(); c.moveTo(x,440); c.lineTo(x+8,430); c.lineTo(x+15,437); c.lineTo(x+24,428); c.lineTo(x+33,436); c.lineTo(x+44,440); c.fill(); c.fillStyle='rgba(240,138,82,.5)'; c.beginPath(); c.arc(x+22,434,3+Math.sin(g.t*8+i)*1.5,0,7); c.fill(); c.fillStyle='rgba(120,120,120,.25)'; c.beginPath(); c.arc(x+22+Math.sin(g.t+i)*4,418-((g.t*14+i*9)%26),6,0,7); c.fill(); } });
+    BX.forEach((x,i)=>{ if(bases[i]){ c.fillStyle='#39434e'; c.beginPath(); c.moveTo(x-26,440); c.lineTo(x-15,424); c.lineTo(x+15,424); c.lineTo(x+26,440); c.fill(); c.fillStyle='#69747e'; c.beginPath(); c.arc(x,424,11,Math.PI,0); c.fill();
+        const ta=Math.atan2(g.ptr.y-424,g.ptr.x-x); c.save(); c.translate(x,422); c.rotate(Math.min(-.2,Math.max(-2.94,ta))); c.fillStyle='#a7b1b8'; c.fillRect(0,-3,24,6); c.fillStyle='#f5b524'; c.fillRect(20,-4,5,8); c.restore();
+        for(let k=0;k<ammo[i];k++){ c.fillStyle='#7fd0ff'; c.fillRect(x-24+(k%5)*10,446+Math.floor(k/5)*9,6,6); } Kit.text(c,'ASD'[i],x,474,11,'#69747e','center'); }
+      else { c.fillStyle='#2a2220'; c.beginPath(); c.moveTo(x-24,440); c.lineTo(x-10,431); c.lineTo(x+2,437); c.lineTo(x+14,429); c.lineTo(x+24,440); c.fill(); } });
+    for(const p of planes){ c.save(); c.translate(p.x,p.y); c.scale(p.vx>0?1:-1,1); c.fillStyle='#69747e'; c.beginPath(); c.moveTo(22,0); c.lineTo(-18,-5); c.lineTo(-22,-12); c.lineTo(-26,-12); c.lineTo(-22,4); c.lineTo(14,5); c.fill(); c.fillStyle='#4a535c'; c.beginPath(); c.moveTo(4,2); c.lineTo(-10,14); c.lineTo(-4,2); c.fill(); c.fillStyle='#e2362c'; c.beginPath(); c.arc(-4,7,2,0,7); c.fill(); c.restore(); }
+    c.lineWidth=2; for(const q of inc){ const y0=q.sy0||0; c.strokeStyle=Kit.grad(c,q.sx,y0,q.x,q.y+.1,'rgba(226,54,44,0)','rgba(255,120,90,.9)'); c.beginPath(); c.moveTo(q.sx,y0); c.lineTo(q.x,q.y); c.stroke(); c.shadowColor='#f55'; c.shadowBlur=10; c.fillStyle=q.split?'#ffd84a':'#fff3e0'; c.beginPath(); c.arc(q.x,q.y,q.split?4:3,0,7); c.fill(); c.shadowBlur=0; }
+    for(const q of mine){ c.strokeStyle='rgba(120,220,255,.8)'; c.beginPath(); c.moveTo(q.sx,424); c.lineTo(q.x,q.y); c.stroke(); c.fillStyle='#fff'; c.beginPath(); c.arc(q.x,q.y,2.5,0,7); c.fill(); c.strokeStyle='#f5b524'; c.lineWidth=1.5; c.beginPath(); c.moveTo(q.tx-6,q.ty-6); c.lineTo(q.tx+6,q.ty+6); c.moveTo(q.tx+6,q.ty-6); c.lineTo(q.tx-6,q.ty+6); c.stroke(); c.lineWidth=2; }
+    for(const b of booms){ const r=Math.max(0,b.r); c.fillStyle=Kit.rgrad(c,b.x,b.y,r||1,'rgba(255,255,255,.95)',b.good?'rgba(160,230,255,.9)':'rgba(255,214,102,.9)',b.good?'rgba(80,150,255,.7)':'rgba(240,110,60,.75)','rgba(226,54,44,0)'); c.beginPath(); c.arc(b.x,b.y,r,0,7); c.fill(); }
+    c.strokeStyle='rgba(243,242,236,.7)'; c.lineWidth=1.5; c.beginPath(); c.arc(g.ptr.x,g.ptr.y,9,0,7); c.moveTo(g.ptr.x-14,g.ptr.y); c.lineTo(g.ptr.x+14,g.ptr.y); c.moveTo(g.ptr.x,g.ptr.y-14); c.lineTo(g.ptr.x,g.ptr.y+14); c.stroke();
+    Kit.text(c,'WAVE '+wave,12,24,14,'#a7b1b8'); Kit.text(c,'Incoming '+(left+inc.length),628,24,13,'#ff9a8a','right');
+    if(tally){ c.fillStyle='rgba(5,8,11,.7)'; c.beginPath(); c.roundRect(170,140,300,150,14); c.fill(); Kit.text(c,'WAVE '+wave+' CLEARED',320,176,20,'#f5b524','center'); Kit.text(c,'Interceptors left  '+tally.a+' x 5',320,210,15,'#f3f2ec','center'); Kit.text(c,'Towns standing  '+tally.t+' x 100',320,234,15,'#f3f2ec','center'); Kit.text(c,'Bonus +'+tally.pts,320,268,18,'#7fd0ff','center'); } }
 });
 })();
 </script>

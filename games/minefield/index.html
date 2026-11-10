@@ -9,31 +9,42 @@
 <script src="../../assets/kit.js"></script>
 <script>
 (function () {
-const N=12, M=22, C=40; let cells, first, flagMode, openCount;
+const SIZES={medium:[12,24],easy:[9,10],hard:[16,50]};
+let N, M, C, cells, first, flagMode, openCount, endT, boom;
 const at=(x,y)=>x>=0&&y>=0&&x<N&&y<N?cells[y*N+x]:null;
-const around=(x,y)=>{ const o=[]; for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ if(dx||dy){ const q=at(x+dx,y+dy); if(q) o.push(q); } } return o; };
-function lay(sx,sy){ let n=0; while(n<M){ const q=cells[Kit.irnd(N*N)]; if(!q.mine&&(Math.abs(q.x-sx)>1||Math.abs(q.y-sy)>1)){ q.mine=true; n++; } } for(const q of cells) q.n=around(q.x,q.y).filter(a=>a.mine).length; }
-function open(q,g){ if(q.open||q.flag) return; q.open=true; openCount++; if(q.mine){ cells.forEach(k=>{ if(k.mine) k.open=true; }); g.beep(90,.5,'sawtooth'); g.noBest=true; g.shake(16); g.burst(q.x*C+20,q.y*C+20,'#f08a52',30,260); return g.over('Boom!'); }
-  if(!q.n) around(q.x,q.y).forEach(a=>open(a,g)); }
-Kit.game({ id:'minefield', title:'Minefield', w:480, h:540, unit:'Seconds', low:true, help:'Click a square to open it. Numbers count the mines touching that square. Press F or use the Flag button to mark mines. Open every safe square.',
-  start(){ cells=[]; for(let y=0;y<N;y++)for(let x=0;x<N;x++) cells.push({x,y,mine:false,open:false,flag:false,n:0}); first=true; flagMode=false; openCount=0; },
-  key(c){ if(c==='KeyF') flagMode=!flagMode; },
-  tap(x,y,g){ if(y>480){ flagMode=!flagMode; return; } const q=at(Math.floor(x/C),Math.floor(y/C)); if(!q) return;
-    if(flagMode){ if(!q.open){ q.flag=!q.flag; g.beep(500,.04); } return; } if(first){ first=false; lay(q.x,q.y); g.t=0; }
-    open(q,g); g.beep(660,.03); if(g.playing&&openCount===N*N-M) g.win('Field cleared!'); },
-  update(dt,g){ g.score=first?0:Math.floor(g.t); },
-  draw(c,g){ c.fillStyle='#1b2a1f'; c.fillRect(0,0,480,540); c.font='900 21px sans-serif'; c.textAlign='center'; c.textBaseline='middle';
-    for(const q of cells){ const X=q.x*C,Y=q.y*C;
-      if(!q.open){ c.fillStyle=(q.x+q.y)%2?'#4f9a55':'#57a65d'; c.fillRect(X,Y,C,C); c.fillStyle='rgba(255,255,255,.22)'; c.fillRect(X,Y,C,3); c.fillRect(X,Y,3,C); c.fillStyle='rgba(0,0,0,.22)'; c.fillRect(X,Y+C-3,C,3); c.fillRect(X+C-3,Y,3,C);
-        c.fillStyle='rgba(20,60,25,.35)'; c.fillRect(X+9+(q.x*7)%14,Y+11+(q.y*5)%12,2,6); c.fillRect(X+22+(q.y*3)%8,Y+24,2,5);
-        if(q.flag){ c.fillStyle='rgba(0,0,0,.3)'; c.beginPath(); c.ellipse(X+21,Y+33,8,3,0,0,7); c.fill(); c.fillStyle='#e9e4d0'; c.fillRect(X+13,Y+7,3,26); c.fillStyle='#e2362c'; c.beginPath(); c.moveTo(X+16,Y+7); c.quadraticCurveTo(X+26,Y+9,X+32,Y+14); c.quadraticCurveTo(X+24,Y+18,X+16,Y+21); c.fill(); } }
-      else { c.fillStyle=q.mine?'#8a2a22':((q.x+q.y)%2?'#d9c49a':'#e3d0a8'); c.fillRect(X,Y,C,C); c.fillStyle='rgba(0,0,0,.08)'; c.fillRect(X,Y,C,2); c.fillRect(X,Y,2,C);
-        if(q.mine){ c.strokeStyle='#15181c'; c.lineWidth=3; for(let i=0;i<4;i++){ const a=i*Math.PI/4; c.beginPath(); c.moveTo(X+20+Math.cos(a)*15,Y+20+Math.sin(a)*15); c.lineTo(X+20-Math.cos(a)*15,Y+20-Math.sin(a)*15); c.stroke(); }
-          c.fillStyle=Kit.rgrad(c,X+16,Y+16,14,'#5a6068','#15181c'); c.beginPath(); c.arc(X+20,Y+20,10,0,7); c.fill(); c.fillStyle='#fff'; c.beginPath(); c.arc(X+16,Y+16,2.500,0,7); c.fill(); }
-        else if(q.n){ c.fillStyle=['','#1f6fd0','#2a8f3f','#d0342a','#5a2fb0','#a8521a','#178a8a','#222','#555'][q.n]; c.fillText(q.n,X+20,Y+22); } } }
+const around=(q)=>{ const o=[]; for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ if(dx||dy){ const k=at(q.x+dx,q.y+dy); if(k) o.push(k); } } return o; };
+function lay(s){ let n=0; while(n<M){ const q=cells[Kit.irnd(N*N)]; if(!q.mine&&(Math.abs(q.x-s.x)>1||Math.abs(q.y-s.y)>1)){ q.mine=true; n++; } } for(const q of cells) q.n=around(q).filter((a)=>a.mine).length; }
+function lose(q,g){ boom=q; cells.forEach((k)=>{ if(k.mine&&!k.flag) k.open=true; if(k.flag&&!k.mine) k.wrong=true; }); g.sfx('boom'); g.noBest=true; g.shake(18); g.burst(q.x*C+C/2,q.y*C+C/2,['#f08a52','#fff3b0','#39434e'],40,300); g.over('Boom!'); }
+function open(q,g,d){ if(q.open||q.flag||!g.playing) return; q.open=true; q.pop=1+(d||0)*.04; openCount++; if(q.mine) return lose(q,g); if(!q.n) around(q).forEach((a)=>open(a,g,(d||0)+1)); }
+function flag(q,g){ if(!q||q.open) return; q.flag=!q.flag; g.sfx(q.flag?'click':'tick'); if(q.flag) g.burst(q.x*C+C/2,q.y*C+C/2,'#e2362c',6,90); }
+function click(x,y,g,alt){ if(y>480){ if(x>150&&x<330){ flagMode=!flagMode; g.sfx('click'); } return; } const q=at(Math.floor(x/C),Math.floor(y/C)); if(!q) return;
+  if(alt||flagMode) return flag(q,g);
+  if(q.open){ if(q.n&&around(q).filter((a)=>a.flag).length===q.n){ around(q).forEach((a)=>open(a,g)); g.sfx('click'); } }
+  else { if(q.flag) return; if(first){ first=false; lay(q); g.t=0; } open(q,g); if(g.playing) g.tone(520+Math.min(400,openCount*3),0,.04,'triangle',.05); }
+  if(g.playing&&openCount===N*N-M){ cells.forEach((k)=>{ if(k.mine) k.flag=true; }); for(let i=0;i<24;i++) g.burst(Kit.rnd(480),Kit.rnd(480),['#f5c531','#3fb374','#4fc3f7','#e2362c'],4,200); g.win('Field cleared!'); } }
+Kit.game({ id:'minefield', title:'Minefield', w:480, h:540, unit:'Seconds', low:true,
+  modes:[['medium','Medium 12x12'],['easy','Easy 9x9'],['hard','Hard 16x16']],
+  help:'Open every square that does not hide a mine. A number counts the mines touching that square. Your first click is always safe. Click a number that already has enough flags around it to open the rest of its neighbours at once.',
+  keys:[['Open','Click or tap'],['Flag','Right-click, press and hold, or F for flag mode'],['Pause','P or Esc']],
+  start(g){ [N,M]=SIZES[g.mode]; C=480/N; cells=[]; for(let y=0;y<N;y++)for(let x=0;x<N;x++) cells.push({x,y,mine:false,open:false,flag:false,n:0,pop:0}); first=true; flagMode=false; openCount=0; boom=null; },
+  key(c,g){ if(c==='KeyF'){ flagMode=!flagMode; g.sfx('click'); } },
+  tap(x,y,g){ click(x,y,g,false); }, rtap(x,y,g){ click(x,y,g,true); }, hold(x,y,g){ if(y<480) click(x,y,g,true); },
+  update(dt,g){ g.score=first?0:Math.floor(g.t); for(const q of cells) q.pop=Math.max(0,q.pop-dt*4); g.stats=[['Board',N+' x '+N+', '+M+' mines']]; },
+  draw(c,g){ c.fillStyle='#1b2a1f'; c.fillRect(0,0,480,540); c.textAlign='center'; c.textBaseline='middle'; const hx=Math.floor(g.ptr.x/C), hy=Math.floor(g.ptr.y/C);
+    for(const q of cells){ const X=q.x*C,Y=q.y*C, b=Math.max(2,C*.08);
+      if(!q.open){ c.fillStyle=(q.x+q.y)%2?'#4f9a55':'#57a65d'; c.fillRect(X,Y,C,C); c.fillStyle='rgba(255,255,255,.22)'; c.fillRect(X,Y,C,b); c.fillRect(X,Y,b,C); c.fillStyle='rgba(0,0,0,.22)'; c.fillRect(X,Y+C-b,C,b); c.fillRect(X+C-b,Y,b,C);
+        c.fillStyle='rgba(20,60,25,.35)'; c.fillRect(X+C*.25+(q.x*7)%(C*.3),Y+C*.3+(q.y*5)%(C*.3),2,C*.15);
+        if(q.x===hx&&q.y===hy&&g.playing&&g.ptr.y<480){ c.fillStyle='rgba(255,255,255,.18)'; c.fillRect(X,Y,C,C); }
+        if(q.flag){ c.fillStyle='rgba(0,0,0,.3)'; c.beginPath(); c.ellipse(X+C*.52,Y+C*.82,C*.2,C*.07,0,0,7); c.fill(); c.fillStyle='#e9e4d0'; c.fillRect(X+C*.32,Y+C*.18,C*.07,C*.65); c.fillStyle='#e2362c'; c.beginPath(); c.moveTo(X+C*.39,Y+C*.18); c.quadraticCurveTo(X+C*.65,Y+C*.22,X+C*.8,Y+C*.35); c.quadraticCurveTo(X+C*.6,Y+C*.45,X+C*.39,Y+C*.52); c.fill();
+          if(q.wrong){ c.strokeStyle='#10131a'; c.lineWidth=3; c.beginPath(); c.moveTo(X+5,Y+5); c.lineTo(X+C-5,Y+C-5); c.moveTo(X+C-5,Y+5); c.lineTo(X+5,Y+C-5); c.stroke(); } } }
+      else { c.fillStyle=q===boom?'#c0392b':q.mine?'#8a2a22':((q.x+q.y)%2?'#d9c49a':'#e3d0a8'); c.fillRect(X,Y,C,C); c.fillStyle='rgba(0,0,0,.08)'; c.fillRect(X,Y,C,2); c.fillRect(X,Y,2,C);
+        if(q.pop>0){ c.fillStyle=`rgba(255,255,255,${Math.min(.6,q.pop*.6)})`; c.fillRect(X,Y,C,C); }
+        if(q.mine){ const r=C*.25; c.strokeStyle='#15181c'; c.lineWidth=Math.max(2,C*.07); for(let i=0;i<4;i++){ const a=i*Math.PI/4; c.beginPath(); c.moveTo(X+C/2+Math.cos(a)*r*1.5,Y+C/2+Math.sin(a)*r*1.5); c.lineTo(X+C/2-Math.cos(a)*r*1.5,Y+C/2-Math.sin(a)*r*1.5); c.stroke(); }
+          c.fillStyle=Kit.rgrad(c,X+C*.4,Y+C*.4,r*1.4,'#5a6068','#15181c'); c.beginPath(); c.arc(X+C/2,Y+C/2,r,0,7); c.fill(); c.fillStyle='#fff'; c.beginPath(); c.arc(X+C*.42,Y+C*.42,r*.25,0,7); c.fill(); }
+        else if(q.n){ c.font='900 '+Math.round(C*.56)+'px system-ui,sans-serif'; c.fillStyle=['','#1f6fd0','#2a8f3f','#d0342a','#5a2fb0','#a8521a','#178a8a','#222','#555'][q.n]; c.fillText(q.n,X+C/2,Y+C/2+1); } } }
     c.strokeStyle='rgba(0,0,0,.15)'; c.lineWidth=1; for(let i=1;i<N;i++){ c.beginPath(); c.moveTo(i*C,0); c.lineTo(i*C,480); c.moveTo(0,i*C); c.lineTo(480,i*C); c.stroke(); }
-    const left=M-cells.filter(q=>q.flag).length; c.fillStyle=flagMode?'#e2362c':'#2b3743'; c.beginPath(); c.roundRect(150,490,180,40,8); c.fill(); c.fillStyle='#f3f2ec'; c.font='900 15px sans-serif'; c.fillText(flagMode?'FLAG MODE: ON':'FLAG MODE: OFF',240,511);
-    c.textAlign='left'; c.fillStyle='#e9e4d0'; c.fillText('Mines left: '+left,14,511); c.textBaseline='alphabetic'; }
+    c.textBaseline='alphabetic'; const left=M-cells.filter((q)=>q.flag).length; c.fillStyle=flagMode?'#e2362c':'#2b3743'; c.beginPath(); c.roundRect(150,490,180,40,8); c.fill(); Kit.text(c,flagMode?'FLAG MODE: ON':'FLAG MODE: OFF',240,516,14,'#f3f2ec','center');
+    Kit.text(c,'Mines '+left,14,516,15,'#e9e4d0'); Kit.text(c,(first?0:Math.floor(g.t))+' s',466,516,15,'#e9e4d0','right'); }
 });
 })();
 </script>

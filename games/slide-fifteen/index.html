@@ -9,21 +9,31 @@
 <script src="../../assets/kit.js"></script>
 <script>
 (function () {
-const N=4, C=110; let t, hole;
-function mv(i,g,quiet){ const hx=hole%N, hy=Math.floor(hole/N), x=i%N, y=Math.floor(i/N); if(Math.abs(hx-x)+Math.abs(hy-y)!==1) return false; t[hole]=t[i]; t[i]=0; hole=i; if(!quiet){ g.score++; g.beep(520,.04,'triangle'); if(t.every((v,k)=>v===(k+1)%16)) g.win('Solved!'); } return true; }
-Kit.game({ id:'slide-fifteen', title:'Slide Fifteen', w:480, h:480, unit:'Moves', low:true, help:'Click a tile next to the gap to slide it, or use the arrow keys. Put the numbers in order from 1 to 15.',
-  start(g){ t=[...Array(15).keys()].map(v=>v+1).concat(0); hole=15; let last=-1; for(let k=0;k<200;k++){ const hx=hole%N, hy=Math.floor(hole/N); const opts=[[1,0],[-1,0],[0,1],[0,-1]].map(([a,b])=>[hx+a,hy+b]).filter(([a,b])=>a>=0&&b>=0&&a<N&&b<N).map(([a,b])=>b*N+a).filter(i=>i!==last); const i=Kit.pick(opts); last=hole; mv(i,g,true); } },
-  tap(x,y,g){ const cx=Math.floor((x-20)/C), cy=Math.floor((y-20)/C); if(cx>=0&&cy>=0&&cx<N&&cy<N) mv(cy*N+cx,g); },
-  key(c,g){ const hx=hole%N, hy=Math.floor(hole/N); const m={ArrowLeft:[1,0],ArrowRight:[-1,0],ArrowUp:[0,1],ArrowDown:[0,-1]}[c]; if(m){ const a=hx+m[0], b=hy+m[1]; if(a>=0&&b>=0&&a<N&&b<N) mv(b*N+a,g); } },
-  draw(c){ c.fillStyle='#3b2a1c'; c.fillRect(0,0,480,480); c.fillStyle=Kit.grad(c,0,0,480,480,'#6b4a2e','#4a321e'); c.beginPath(); c.roundRect(8,8,464,464,14); c.fill(); c.fillStyle='#23170e'; c.beginPath(); c.roundRect(18,18,444,444,8); c.fill();
-    c.textAlign='center'; c.textBaseline='middle'; c.font='900 42px Georgia, serif';
-    t.forEach((v,i)=>{ if(!v) return; const x=20+(i%N)*C, y=20+Math.floor(i/N)*C, ok=v===i+1;
-      c.fillStyle='rgba(0,0,0,.4)'; c.beginPath(); c.roundRect(x+5,y+7,C-8,C-8,10); c.fill();
-      c.fillStyle=ok?Kit.grad(c,x,y,x+C,y+C,'#6fd08a','#2f8f52'):Kit.grad(c,x,y,x+C,y+C,'#f2dfb8','#cfae78'); c.beginPath(); c.roundRect(x+3,y+3,C-8,C-8,10); c.fill();
-      c.strokeStyle='rgba(120,80,30,.14)'; c.lineWidth=1; for(let k=0;k<5;k++){ c.beginPath(); c.moveTo(x+8,y+16+k*18+(v*3)%7); c.quadraticCurveTo(x+C/2,y+10+k*18+(v*5)%9,x+C-12,y+16+k*18); c.stroke(); }
-      c.fillStyle='rgba(255,255,255,.4)'; c.beginPath(); c.roundRect(x+7,y+6,C-16,5,3); c.fill(); c.fillStyle='rgba(0,0,0,.18)'; c.beginPath(); c.roundRect(x+7,y+C-13,C-16,5,3); c.fill();
-      c.fillStyle='rgba(255,255,255,.5)'; c.fillText(v,x+C/2-1,y+C/2+2); c.fillStyle=ok?'#0f3a1e':'#4a2f14'; c.fillText(v,x+C/2-2.500,y+C/2+.5); });
-    c.textAlign='left'; c.textBaseline='alphabetic'; }
+const SZ={four:4,three:3,five:5};
+let N, C, t, pos, hole, moves, solvedT;
+const goal=(i)=>(i+1)%(N*N);
+function slide(i,g,quiet){ const hx=hole%N, hy=Math.floor(hole/N), x=i%N, y=Math.floor(i/N); if(i===hole||(hx!==x&&hy!==y)) return false; const dx=Math.sign(x-hx), dy=Math.sign(y-hy); let cur=hole, n=0;
+  while(cur!==i){ const nxt=cur+dx+dy*N; t[cur]=t[nxt]; t[nxt]=0; cur=nxt; n++; } hole=i; if(!quiet){ moves+=n; g.score=moves; g.sfx('flip'); if(t.every((v,k)=>v===goal(k))){ solvedT=1.2; g.sfx('level'); for(let k=0;k<20;k++) g.burst(Kit.rnd(480),Kit.rnd(480),['#6fd08a','#f5c531','#fff'],4,200); } } return true; }
+Kit.game({ id:'slide-fifteen', title:'Slide Fifteen', w:480, h:520, unit:'Moves', low:true, pad:'dpad',
+  modes:[['four','4 x 4'],['three','3 x 3'],['five','5 x 5']],
+  help:'Slide the tiles until they read in order with the gap in the bottom corner. Click any tile in line with the gap to push the whole row or column. Tiles turn green when they are home.',
+  keys:[['Slide','Click a tile, or arrow keys / swipe'],['Pause','P or Esc']],
+  start(g){ N=SZ[g.mode]; C=440/N; t=[...Array(N*N-1).keys()].map((v)=>v+1).concat(0); hole=N*N-1; moves=0; solvedT=0; let last=-1; for(let k=0;k<N*N*40;k++){ const hx=hole%N, hy=Math.floor(hole/N); const o=[[1,0],[-1,0],[0,1],[0,-1]].map(([a,b])=>[hx+a,hy+b]).filter(([a,b])=>a>=0&&b>=0&&a<N&&b<N).map(([a,b])=>b*N+a).filter((i)=>i!==last); const i=Kit.pick(o); last=hole; slide(i,g,true); }
+    if(t.every((v,k)=>v===goal(k))) slide(hole-1,g,true); pos={}; t.forEach((v,i)=>{ if(v) pos[v]=[i%N,Math.floor(i/N)]; }); },
+  tap(x,y,g){ if(solvedT>0) return; const cx=Math.floor((x-20)/C), cy=Math.floor((y-20)/C); if(cx>=0&&cy>=0&&cx<N&&cy<N) slide(cy*N+cx,g); },
+  key(c,g){ if(solvedT>0) return; const hx=hole%N, hy=Math.floor(hole/N); const m={ArrowLeft:[1,0],ArrowRight:[-1,0],ArrowUp:[0,1],ArrowDown:[0,-1],KeyA:[1,0],KeyD:[-1,0],KeyW:[0,1],KeyS:[0,-1]}[c]; if(m){ const a=hx+m[0], b=hy+m[1]; if(a>=0&&b>=0&&a<N&&b<N) slide(b*N+a,g); } },
+  swipe(d,g){ this.key({left:'ArrowLeft',right:'ArrowRight',up:'ArrowUp',down:'ArrowDown'}[d],g); },
+  update(dt,g){ t.forEach((v,i)=>{ if(!v) return; const p=pos[v], tx=i%N, ty=Math.floor(i/N); p[0]+=(tx-p[0])*Math.min(1,dt*20); p[1]+=(ty-p[1])*Math.min(1,dt*20); });
+    g.stats=[['Time',Math.floor(g.t)+' s']]; if(solvedT>0){ solvedT-=dt; if(solvedT<=0) g.win('Solved!'); } },
+  draw(c,g){ c.fillStyle='#3b2a1c'; c.fillRect(0,0,480,520); c.fillStyle=Kit.grad(c,0,0,480,480,'#6b4a2e','#4a321e'); c.beginPath(); c.roundRect(8,8,464,464,14); c.fill(); c.fillStyle='#23170e'; c.beginPath(); c.roundRect(18,18,444,444,8); c.fill();
+    c.textAlign='center'; c.textBaseline='middle'; c.font='900 '+Math.round(C*.4)+'px Georgia, serif';
+    t.forEach((v,i)=>{ if(!v) return; const p=pos[v], x=20+p[0]*C, y=20+p[1]*C, ok=v===i+1, r=Math.max(6,C*.09);
+      c.fillStyle='rgba(0,0,0,.4)'; c.beginPath(); c.roundRect(x+5,y+7,C-8,C-8,r); c.fill();
+      c.fillStyle=ok?Kit.grad(c,x,y,x+C,y+C,'#6fd08a','#2f8f52'):Kit.grad(c,x,y,x+C,y+C,'#f2dfb8','#cfae78'); c.beginPath(); c.roundRect(x+3,y+3,C-8,C-8,r); c.fill();
+      c.save(); c.beginPath(); c.roundRect(x+3,y+3,C-8,C-8,r); c.clip(); c.strokeStyle='rgba(120,80,30,.14)'; c.lineWidth=1; for(let k=0;k<6;k++){ c.beginPath(); c.moveTo(x+4,y+10+k*C/5+(v*3)%7); c.quadraticCurveTo(x+C/2,y+4+k*C/5+(v*5)%9,x+C-6,y+10+k*C/5); c.stroke(); } c.restore();
+      c.fillStyle='rgba(255,255,255,.4)'; c.beginPath(); c.roundRect(x+7,y+6,C-16,4,2); c.fill(); c.fillStyle='rgba(0,0,0,.18)'; c.beginPath(); c.roundRect(x+7,y+C-12,C-16,4,2); c.fill();
+      c.fillStyle='rgba(255,255,255,.5)'; c.fillText(v,x+C/2-1,y+C/2+2); c.fillStyle=ok?'#0f3a1e':'#4a2f14'; c.fillText(v,x+C/2-2.5,y+C/2+.5); });
+    c.textAlign='left'; c.textBaseline='alphabetic'; Kit.text(c,'Moves '+moves,20,504,16,'#f2dfb8'); Kit.text(c,Math.floor(g.t)+' s',460,504,16,'#f2dfb8','right'); const home=t.filter((v,i)=>v&&v===i+1).length; Kit.bar(c,150,490,180,14,home/(N*N-1),'#6fd08a'); }
 });
 })();
 </script>

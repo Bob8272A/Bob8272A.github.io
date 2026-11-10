@@ -9,22 +9,35 @@
 <script src="../../assets/kit.js"></script>
 <script>
 (function () {
-const N=5, C=88; let on, level, moves;
-function flip(x,y){ [[0,0],[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy])=>{ const a=x+dx,b=y+dy; if(a>=0&&b>=0&&a<N&&b<N) on[b*N+a]=!on[b*N+a]; }); }
-function setup(){ on=Array(N*N).fill(false); for(let i=0;i<3+level*2;i++) flip(Kit.irnd(N),Kit.irnd(N)); if(!on.some(v=>v)) flip(2,2); moves=0; }
-Kit.game({ id:'switchboard', title:'Switchboard', w:480, h:520, unit:'Boards', help:'Clicking a light flips it and its four neighbours. Turn every light off to clear the board. Press R to reset a board.',
-  start(){ level=1; setup(); }, key(c){ if(c==='KeyR') setup(); },
-  tap(x,y,g){ const cx=Math.floor((x-20)/C), cy=Math.floor((y-20)/C); if(cx<0||cy<0||cx>=N||cy>=N) return; flip(cx,cy); moves++; g.beep(on[cy*N+cx]?660:440,.05,'triangle');
-    if(!on.some(v=>v)){ g.score++; level++; g.beep(990,.2); setup(); } },
-  draw(c,g){ c.fillStyle=Kit.grad(c,0,0,0,520,'#2a2f38','#171b21'); c.fillRect(0,0,480,520); c.fillStyle='#3a414c'; c.beginPath(); c.roundRect(10,10,460,460,16); c.fill(); c.fillStyle='#22272e'; c.beginPath(); c.roundRect(16,16,448,448,12); c.fill();
-    c.fillStyle='#8a939a'; for(const [x,y] of [[24,24],[456,24],[24,456],[456,456]]){ c.beginPath(); c.arc(x,y,4,0,7); c.fill(); }
-    for(let i=0;i<N*N;i++){ const x=20+(i%N)*C+C/2, y=20+Math.floor(i/N)*C+C/2, o=on[i];
-      c.fillStyle='#14171c'; c.beginPath(); c.arc(x,y,36,0,7); c.fill(); c.strokeStyle='#4a525e'; c.lineWidth=3; c.beginPath(); c.arc(x,y,36,0,7); c.stroke();
-      if(o){ c.fillStyle=Kit.rgrad(c,x,y,60,'rgba(255,214,102,.45)','rgba(255,214,102,0)'); c.beginPath(); c.arc(x,y,60,0,7); c.fill(); }
-      c.fillStyle=o?Kit.rgrad(c,x-8,y-10,34,'#fffbe0','#ffd23a','#e89a10'):Kit.rgrad(c,x-8,y-10,34,'#5a626e','#353b45','#22262d'); c.beginPath(); c.arc(x,y,28,0,7); c.fill();
-      c.strokeStyle=o?'#b06a08':'#6a7380'; c.lineWidth=2; c.beginPath(); c.moveTo(x-8,y+8); c.lineTo(x-4,y-6); c.lineTo(x,y+4); c.lineTo(x+4,y-6); c.lineTo(x+8,y+8); c.stroke();
-      c.fillStyle='rgba(255,255,255,'+(o?.7:.18)+')'; c.beginPath(); c.ellipse(x-10,y-13,8,4.500,-.6,0,7); c.fill(); }
-    c.fillStyle='#a7b1b8'; c.font='700 15px monospace'; c.fillText('Board '+level+'   Moves '+moves+'   R resets',22,500); }
+const SZ={classic:5,large:6}, BOARDS=10;
+let N, C, on, sol, level, moves, par, hist, stars, usedHint, hintCell, anim, doneT, got;
+const idx=(x,y)=>y*N+x;
+function flip(x,y){ [[0,0],[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy])=>{ const a=x+dx,b=y+dy; if(a>=0&&b>=0&&a<N&&b<N){ on[idx(a,b)]=!on[idx(a,b)]; anim[idx(a,b)]=1; } }); sol[idx(x,y)]=!sol[idx(x,y)]; }
+function setup(){ on=Array(N*N).fill(false); sol=Array(N*N).fill(false); anim=Array(N*N).fill(0); const k=Math.min(N*N-6,2+level+(N>5?2:0)); const cells=Kit.shuffle([...Array(N*N).keys()]).slice(0,k); cells.forEach((i)=>flip(i%N,Math.floor(i/N))); if(!on.some((v)=>v)) flip(2,2);
+  par=sol.filter((v)=>v).length; moves=0; hist=[]; usedHint=false; hintCell=-1; doneT=0; anim.fill(0); }
+function press(x,y,g,undo){ flip(x,y); if(!undo){ hist.push([x,y]); moves++; } hintCell=-1; g.tone(on[idx(x,y)]?660:440,0,.06,'triangle',.07);
+  if(!on.some((v)=>v)){ got=usedHint?1:moves<=par?3:moves<=par+3?2:1; stars+=got; g.score=stars; doneT=1.6; g.sfx('level'); for(let i=0;i<got;i++) g.burst(190+i*50,230,'#f5c531',14,200); } }
+Kit.game({ id:'switchboard', title:'Switchboard', w:480, h:560, unit:'Stars',
+  modes:[['classic','5 x 5'],['large','6 x 6']],
+  help:'Clicking a bulb flips it and its four neighbours. Switch every bulb off. Ten boards, each harder than the last: finish in the target number of moves for 3 stars. A hint shows one correct bulb but caps that board at 1 star.',
+  keys:[['Flip','Click or tap a bulb'],['Hint · Undo · Restart board','H · U · R'],['Pause','P or Esc']],
+  start(g){ N=SZ[g.mode]; C=440/N; level=1; stars=0; setup(); },
+  key(c,g){ if(doneT>0) return; if(c==='KeyR'){ while(hist.length){ const [x,y]=hist.pop(); flip(x,y); } moves=0; g.sfx('click'); } if((c==='KeyU'||c==='KeyZ')&&hist.length){ const [x,y]=hist.pop(); press(x,y,g,true); moves++; } if(c==='KeyH'){ const i=sol.indexOf(true); if(i>=0){ hintCell=i; usedHint=true; g.sfx('click'); } } },
+  tap(x,y,g){ if(doneT>0) return; if(y>500){ const b=Math.floor((x-20)/150); if(b===0) this.key('KeyH',g); if(b===1) this.key('KeyU',g); if(b===2) this.key('KeyR',g); return; }
+    const cx=Math.floor((x-20)/C), cy=Math.floor((y-52)/C); if(cx<0||cy<0||cx>=N||cy>=N) return; press(cx,cy,g); },
+  update(dt,g){ for(let i=0;i<anim.length;i++) anim[i]=Math.max(0,anim[i]-dt*5); g.stats=[['Boards cleared',level-(doneT>0?0:1)+' / '+BOARDS]];
+    if(doneT>0){ doneT-=dt; if(doneT<=0){ if(level>=BOARDS) return g.win(stars>=BOARDS*3?'Perfect run!':'All boards clear!'); level++; setup(); } } },
+  draw(c,g){ c.fillStyle=Kit.grad(c,0,0,0,560,'#2a2f38','#171b21'); c.fillRect(0,0,480,560); c.fillStyle='#3a414c'; c.beginPath(); c.roundRect(10,42,460,460,16); c.fill(); c.fillStyle='#22272e'; c.beginPath(); c.roundRect(16,48,448,448,12); c.fill();
+    c.fillStyle='#8a939a'; for(const [x,y] of [[24,56],[456,56],[24,488],[456,488]]){ c.beginPath(); c.arc(x,y,4,0,7); c.fill(); }
+    const R=C*.33; for(let i=0;i<N*N;i++){ const x=20+(i%N)*C+C/2, y=52+Math.floor(i/N)*C+C/2, o=on[i], s=1+anim[i]*.12;
+      c.fillStyle='#14171c'; c.beginPath(); c.arc(x,y,R*1.28,0,7); c.fill(); c.strokeStyle=i===hintCell&&Math.sin(g.t*10)>0?'#7fd0ff':'#4a525e'; c.lineWidth=i===hintCell?5:3; c.beginPath(); c.arc(x,y,R*1.28,0,7); c.stroke();
+      if(o){ c.fillStyle=Kit.rgrad(c,x,y,R*2.2,'rgba(255,214,102,.45)','rgba(255,214,102,0)'); c.beginPath(); c.arc(x,y,R*2.2,0,7); c.fill(); }
+      c.fillStyle=o?Kit.rgrad(c,x-R*.3,y-R*.35,R*1.2,'#fffbe0','#ffd23a','#e89a10'):Kit.rgrad(c,x-R*.3,y-R*.35,R*1.2,'#5a626e','#353b45','#22262d'); c.beginPath(); c.arc(x,y,R*s,0,7); c.fill();
+      c.strokeStyle=o?'#b06a08':'#6a7380'; c.lineWidth=2; c.beginPath(); c.moveTo(x-R*.3,y+R*.3); c.lineTo(x-R*.15,y-R*.2); c.lineTo(x,y+R*.15); c.lineTo(x+R*.15,y-R*.2); c.lineTo(x+R*.3,y+R*.3); c.stroke();
+      c.fillStyle='rgba(255,255,255,'+(o?.7:.18)+')'; c.beginPath(); c.ellipse(x-R*.35,y-R*.45,R*.28,R*.16,-.6,0,7); c.fill(); }
+    Kit.text(c,'BOARD '+level+' / '+BOARDS,20,30,15,'#f3f2ec'); Kit.text(c,'Moves '+moves+'   Target '+par,460,30,14,moves>par?'#ff9a8a':'#a7f0c8','right');
+    ['Hint (H)','Undo (U)','Restart (R)'].forEach((t,i)=>{ c.fillStyle='#2b3743'; c.beginPath(); c.roundRect(20+i*150,512,140,36,8); c.fill(); Kit.text(c,t,90+i*150,535,13,i===0&&usedHint?'#7fd0ff':'#f3f2ec','center'); });
+    if(doneT>0){ c.fillStyle='rgba(5,8,11,.7)'; c.beginPath(); c.roundRect(110,180,260,130,16); c.fill(); Kit.text(c,'LIGHTS OUT!',240,214,22,'#f5b524','center'); for(let i=0;i<3;i++) Kit.star(c,190+i*50,256,20,i<got?'#f5c531':'rgba(255,255,255,.15)'); Kit.text(c,usedHint?'Hint used':moves<=par?'On target':moves+' moves',240,298,13,'#a7b1b8','center'); } }
 });
 })();
 </script>

@@ -9,26 +9,41 @@
 <script src="../../assets/kit.js"></script>
 <script>
 (function () {
-const N=8, C=56; let bd, turn, think, msg;
-const D=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
-function flips(b,x,y,w){ if(b[y*N+x]) return []; const out=[]; for(const [dx,dy] of D){ const line=[]; let a=x+dx, c=y+dy; while(a>=0&&c>=0&&a<N&&c<N&&b[c*N+a]===3-w){ line.push(c*N+a); a+=dx; c+=dy; } if(line.length&&a>=0&&c>=0&&a<N&&c<N&&b[c*N+a]===w) out.push(...line); } return out; }
+const N=8, C=56, DIRS=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+const WT=[20,-3,11,8,8,11,-3,20,-3,-7,-4,1,1,-4,-7,-3,11,-4,2,2,2,2,-4,11,8,1,2,-3,-3,2,1,8,8,1,2,-3,-3,2,1,8,11,-4,2,2,2,2,-4,11,-3,-7,-4,1,1,-4,-7,-3,20,-3,11,8,8,11,-3,20];
+let bd, turn, think, anim, last, note, noteT, endT, res;
+function flips(b,x,y,w){ if(b[y*N+x]) return []; const out=[]; for(const [dx,dy] of DIRS){ const line=[]; let a=x+dx, c=y+dy; while(a>=0&&c>=0&&a<N&&c<N&&b[c*N+a]===3-w){ line.push(c*N+a); a+=dx; c+=dy; } if(line.length&&a>=0&&c>=0&&a<N&&c<N&&b[c*N+a]===w) out.push(...line); } return out; }
 function moves(b,w){ const m=[]; for(let i=0;i<64;i++){ const f=flips(b,i%N,i>>3,w); if(f.length) m.push({i,f}); } return m; }
-const WT=[9,-3,3,2,2,3,-3,9,-3,-5,0,0,0,0,-5,-3,3,0,1,1,1,1,0,3,2,0,1,1,1,1,0,2,2,0,1,1,1,1,0,2,3,0,1,1,1,1,0,3,-3,-5,0,0,0,0,-5,-3,9,-3,3,2,2,3,-3,9];
-function count(){ return [bd.filter(v=>v===1).length, bd.filter(v=>v===2).length]; }
-function play(m,w,g){ bd[m.i]=w; m.f.forEach(i=>bd[i]=w); g.beep(w===1?560:400,.06,'triangle'); }
-function next(g){ const other=3-turn; if(moves(bd,other).length) turn=other; else if(!moves(bd,turn).length){ const [p,a]=count(); g.score=p; if(p>a) g.win('You win '+p+' to '+a); else { g.noBest=true; g.over(p===a?'Draw':'Computer wins '+a+' to '+p); } return; }
-  if(turn===2) think=.6; }
-function chip(c,x,y,v){ c.fillStyle='rgba(0,0,0,.4)'; c.beginPath(); c.ellipse(x+2,y+4,22,21,0,0,7); c.fill(); c.fillStyle=v===1?Kit.rgrad(c,x-7,y-8,28,'#ffffff','#e6e1d2','#b9b2a0'):Kit.rgrad(c,x-7,y-8,28,'#5a6470','#1c222b','#07090c'); c.beginPath(); c.arc(x,y,22,0,7); c.fill();
-  c.strokeStyle=v===1?'rgba(0,0,0,.12)':'rgba(255,255,255,.14)'; c.lineWidth=2; c.beginPath(); c.arc(x,y,15,0,7); c.stroke(); c.fillStyle='rgba(255,255,255,'+(v===1?.8:.25)+')'; c.beginPath(); c.ellipse(x-8,y-10,7,3.500,-.6,0,7); c.fill(); }
-Kit.game({ id:'flip-side', title:'Flip Side', w:480, h:520, unit:'Discs', help:'You play light discs. Place a disc so it traps dark discs in a line between two of yours, and they flip to your side. Most discs at the end wins.',
-  start(){ bd=Array(64).fill(0); bd[27]=bd[36]=2; bd[28]=bd[35]=1; turn=1; think=0; },
-  tap(x,y,g){ if(turn!==1) return; const cx=Math.floor((x-16)/C), cy=Math.floor((y-16)/C); if(cx<0||cy<0||cx>=N||cy>=N) return; const f=flips(bd,cx,cy,1); if(!f.length) return; play({i:cy*N+cx,f},1,g); next(g); },
-  update(dt,g){ g.score=count()[0]; if(turn===2&&g.playing){ think-=dt; if(think<=0){ const ms=moves(bd,2); let best=ms[0], bv=-1e9; for(const m of ms){ const v=WT[m.i]*3+m.f.length+Math.random(); if(v>bv){ bv=v; best=m; } } play(best,2,g); next(g); } } },
-  draw(c,g){ c.fillStyle='#2a1c10'; c.fillRect(0,0,480,520); c.fillStyle=Kit.grad(c,0,0,480,480,'#7a5230','#4a2f18'); c.beginPath(); c.roundRect(4,4,472,472,12); c.fill();
+const count=(b)=>[b.filter((v)=>v===1).length,b.filter((v)=>v===2).length];
+function evalB(b){ let s=0; for(let i=0;i<64;i++) if(b[i]) s+=(b[i]===2?1:-1)*WT[i]; return s+(moves(b,2).length-moves(b,1).length)*2; }
+function mm(b,d,w,al,be){ const ms=moves(b,w); if(!d) return evalB(b); if(!ms.length){ if(!moves(b,3-w).length){ const [p,a]=count(b); return (a-p)*1000; } return mm(b,d-1,3-w,al,be); }
+  let best=w===2?-1e9:1e9; for(const m of ms){ const nb=b.slice(); nb[m.i]=w; m.f.forEach((i)=>nb[i]=w); const v=mm(nb,d-1,3-w,al,be); if(w===2){ best=Math.max(best,v); al=Math.max(al,v); } else { best=Math.min(best,v); be=Math.min(be,v); } if(al>=be) break; } return best; }
+function aiPick(g){ const ms=moves(bd,2); if(g.mode==='easy') return Kit.pick(ms); let best=ms[0], bv=-1e9; for(const m of ms){ let v; if(g.mode==='hard'){ const nb=bd.slice(); nb[m.i]=2; m.f.forEach((i)=>nb[i]=2); v=mm(nb,3,1,-1e9,1e9)+Math.random(); } else v=WT[m.i]*2+m.f.length+Math.random()*3; if(v>bv){ bv=v; best=m; } } return best; }
+function play(m,w,g){ bd[m.i]=w; anim[m.i]={t:1,from:0}; m.f.forEach((i,k)=>{ bd[i]=w; anim[i]={t:1+k*.12,from:3-w}; }); last=m.i; g.sfx('thud'); g.tone(w===1?560:400,0,.08,'triangle',.06); if(m.f.length>=5) g.pop(16+(m.i%N)*C+C/2,16+(m.i>>3)*C,m.f.length+' flipped!','#f5c531',14);
+  const other=3-w; if(moves(bd,other).length) turn=other; else if(moves(bd,w).length){ note=(g.mode==='two'?(other===1?'Light':'Dark'):(other===1?'You':'Computer'))+' must pass'; noteT=1.6; g.sfx('click'); }
+  else { const [p,a]=count(bd); const two=g.mode==='two'; res=p===a?['Draw',false]:p>a?[two?'Light wins '+p+' to '+a:'You win '+p+' to '+a,true]:[two?'Dark wins '+a+' to '+p:'Computer wins '+a+' to '+p,two]; endT=1.6; turn=0; return; }
+  if(turn===2&&g.mode!=='two') think=.7; }
+Kit.game({ id:'flip-side', title:'Flip Side', w:480, h:520, unit:'Discs',
+  modes:[['normal','vs Computer'],['easy','Easy'],['hard','Hard'],['two','2 Players']],
+  help:'Place a disc so that it traps a line of the other colour between two of yours, and the trapped discs flip to your side. If you have no move you pass. Most discs when the board fills up wins. Corners can never be flipped back.',
+  keys:[['Place a disc','Click a marked square'],['Pause','P or Esc']],
+  start(g){ bd=Array(64).fill(0); bd[27]=bd[36]=2; bd[28]=bd[35]=1; turn=1; think=0; anim={}; last=-1; note=''; noteT=0; endT=0; res=null; },
+  tap(x,y,g){ if(endT>0||(turn!==1&&g.mode!=='two')||turn===0) return; const cx=Math.floor((x-16)/C), cy=Math.floor((y-16)/C); if(cx<0||cy<0||cx>=N||cy>=N) return; const f=flips(bd,cx,cy,turn); if(!f.length){ if(!bd[cy*N+cx]) g.sfx('bad'); return; } play({i:cy*N+cx,f},turn,g); },
+  update(dt,g){ g.score=count(bd)[0]; noteT-=dt; for(const k in anim){ anim[k].t-=dt*4; if(anim[k].t<=0) delete anim[k]; }
+    if(endT>0){ endT-=dt; if(endT<=0){ g.stats=[['Final',count(bd).join(' - ')]]; if(g.mode==='two'||!res[1]) g.noBest=true; if(res[1]) g.win(res[0]); else g.over(res[0]); } return; }
+    if(turn===2&&g.mode!=='two'){ think-=dt; if(think<=0) play(aiPick(g),2,g); } },
+  draw(c,g){ const chip=(x,y,v,sx)=>{ c.save(); c.translate(x,y); c.scale(sx===undefined?1:Math.max(.06,Math.abs(sx)),1); c.fillStyle='rgba(0,0,0,.4)'; c.beginPath(); c.ellipse(2,4,22,21,0,0,7); c.fill(); c.fillStyle=v===1?Kit.rgrad(c,-7,-8,28,'#ffffff','#e6e1d2','#b9b2a0'):Kit.rgrad(c,-7,-8,28,'#5a6470','#1c222b','#07090c'); c.beginPath(); c.arc(0,0,22,0,7); c.fill();
+      c.strokeStyle=v===1?'rgba(0,0,0,.12)':'rgba(255,255,255,.14)'; c.lineWidth=2; c.beginPath(); c.arc(0,0,15,0,7); c.stroke(); c.fillStyle='rgba(255,255,255,'+(v===1?.8:.25)+')'; c.beginPath(); c.ellipse(-8,-10,7,3.5,-.6,0,7); c.fill(); c.restore(); };
+    c.fillStyle='#2a1c10'; c.fillRect(0,0,480,520); c.fillStyle=Kit.grad(c,0,0,480,480,'#7a5230','#4a2f18'); c.beginPath(); c.roundRect(4,4,472,472,12); c.fill();
     c.fillStyle=Kit.rgrad(c,240,240,340,'#1f8a58','#0f5a3a'); c.fillRect(16,16,448,448); c.strokeStyle='rgba(0,0,0,.35)'; c.lineWidth=2; for(let i=0;i<=N;i++){ c.beginPath(); c.moveTo(16+i*C,16); c.lineTo(16+i*C,464); c.moveTo(16,16+i*C); c.lineTo(464,16+i*C); c.stroke(); }
     c.fillStyle='rgba(0,0,0,.45)'; for(const [a,b] of [[2,2],[6,2],[2,6],[6,6]]){ c.beginPath(); c.arc(16+a*C,16+b*C,4,0,7); c.fill(); }
-    const ok=turn===1&&g.playing?moves(bd,1).map(m=>m.i):[]; for(let i=0;i<64;i++){ const x=16+(i%N)*C+C/2, y=16+(i>>3)*C+C/2; if(bd[i]) chip(c,x,y,bd[i]); else if(ok.includes(i)){ c.strokeStyle='rgba(255,255,255,.55)'; c.lineWidth=2; c.setLineDash([4,4]); c.beginPath(); c.arc(x,y,14+Math.sin(g.t*4)*1.500,0,7); c.stroke(); c.setLineDash([]); } }
-    const [p,a]=count(); c.fillStyle='#f3f2ec'; c.beginPath(); c.arc(30,499,10,0,7); c.fill(); c.fillStyle='#07090c'; c.beginPath(); c.arc(270,499,10,0,7); c.fill(); c.strokeStyle='#8a939a'; c.lineWidth=1.500; c.stroke(); c.fillStyle='#f3f2ec'; c.font='900 17px sans-serif'; c.fillText('You  '+p,48,505); c.fillText('Computer  '+a+(turn===2?'  ...':''),288,505); }
+    const human=(turn===1||(g.mode==='two'&&turn===2))&&g.playing&&endT<=0, ok=human?moves(bd,turn):[]; const hx=Math.floor((g.ptr.x-16)/C), hy=Math.floor((g.ptr.y-16)/C);
+    if(last>=0){ c.fillStyle='rgba(245,197,49,.22)'; c.fillRect(16+(last%N)*C+1,16+(last>>3)*C+1,C-2,C-2); }
+    for(let i=0;i<64;i++){ const x=16+(i%N)*C+C/2, y=16+(i>>3)*C+C/2; if(bd[i]){ const an=anim[i]; if(an&&an.from){ const t=Kit.clamp(an.t,0,1); chip(x,y-Math.sin(t*Math.PI)*8,t>.5?an.from:bd[i],Math.cos((1-t)*Math.PI)); } else if(an){ const t=Kit.clamp(an.t,0,1); chip(x,y-t*10,bd[i]); } else chip(x,y,bd[i]); } }
+    for(const m of ok){ const x=16+(m.i%N)*C+C/2, y=16+(m.i>>3)*C+C/2, hov=(m.i%N)===hx&&(m.i>>3)===hy; if(hov){ c.globalAlpha=.5; chip(x,y,turn); c.globalAlpha=1; Kit.text(c,'+'+m.f.length,x,y+5,14,turn===1?'#10131a':'#fff','center'); for(const f of m.f){ c.strokeStyle='#f5c531'; c.lineWidth=2; c.beginPath(); c.arc(16+(f%N)*C+C/2,16+(f>>3)*C+C/2,25,0,7); c.stroke(); } } else { c.strokeStyle='rgba(255,255,255,.55)'; c.lineWidth=2; c.setLineDash([4,4]); c.beginPath(); c.arc(x,y,14+Math.sin(g.t*4)*1.5,0,7); c.stroke(); c.setLineDash([]); } }
+    const [p,a]=count(bd), two=g.mode==='two'; c.fillStyle='#f3f2ec'; c.beginPath(); c.arc(30,499,10,0,7); c.fill(); c.fillStyle='#07090c'; c.beginPath(); c.arc(270,499,10,0,7); c.fill(); c.strokeStyle='#8a939a'; c.lineWidth=1.5; c.stroke();
+    Kit.text(c,(two?'Light  ':'You  ')+p,48,505,16,turn===1?'#f5c531':'#f3f2ec'); Kit.text(c,(two?'Dark  ':'Computer  ')+a+(turn===2&&!two?'  ...':''),288,505,16,turn===2?'#f5c531':'#f3f2ec'); Kit.bar(c,150,492,100,12,p/Math.max(1,p+a),'#f3f2ec','#07090c');
+    if(noteT>0){ c.fillStyle='rgba(5,8,11,.75)'; c.beginPath(); c.roundRect(120,210,240,50,12); c.fill(); Kit.text(c,note,240,242,18,'#f5c531','center'); } }
 });
 })();
 </script>

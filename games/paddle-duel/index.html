@@ -9,29 +9,41 @@
 <script src="../../assets/kit.js"></script>
 <script>
 (function () {
-let py, ay, b, me, ai; const PH=80;
-function serve(d){ b={x:320,y:200,vx:260*d,vy:Kit.rnd(-160,160)}; }
-let tr=[];
+const PH=78, AI={easy:[170,.55],normal:[250,.3],hard:[340,.12]};
+let py, ay, pv, av, b, me, ai, rally, best, serveT, serveDir, tr, flash;
+function serve(d){ b={x:320,y:200,vx:0,vy:0,spin:0}; serveT=1.1; serveDir=d; rally=0; }
 function bat(c,x,y,col,flip){ c.fillStyle='rgba(0,0,0,.35)'; c.beginPath(); c.roundRect(x-5,y-PH/2+5,16,PH,8); c.fill(); c.fillStyle='#b5834f'; c.beginPath(); c.roundRect(x-3,y+PH/2-6,6,22,3); c.fill();
   c.fillStyle=col; c.beginPath(); c.roundRect(x-8,y-PH/2,16,PH,8); c.fill(); c.fillStyle='rgba(255,255,255,.3)'; c.beginPath(); c.roundRect(x+(flip?2:-6),y-PH/2+5,4,PH-10,2); c.fill(); }
-Kit.game({ id:'paddle-duel', title:'Paddle Duel', w:640, h:400, unit:'Points', help:'Move your paddle with the mouse, W/S or the arrow keys. First to 7 wins.',
-  start(){ py=ay=200; me=ai=0; serve(1); },
-  update(dt,g){ if(g.up) py-=380*dt; else if(g.dn) py+=380*dt; else if(g.ptr.last!==g.ptr.y){ py=g.ptr.y; g.ptr.last=g.ptr.y; }
-    py=Kit.clamp(py,PH/2,400-PH/2);
-    const want=b.vx>0?b.y:200; ay+=Kit.clamp(want-ay,-(210+ai*6+me*14)*dt,(210+ai*6+me*14)*dt); ay=Kit.clamp(ay,PH/2,400-PH/2);
-    b.x+=b.vx*dt; b.y+=b.vy*dt;
-    if(b.y<8){b.y=8;b.vy=Math.abs(b.vy);} if(b.y>392){b.y=392;b.vy=-Math.abs(b.vy);}
-    if(b.vx<0&&b.x<34&&b.x>18&&Math.abs(b.y-py)<PH/2+8){ b.vx=Math.abs(b.vx)*1.06; b.vy+=(b.y-py)*5; g.beep(440,.05); }
-    if(b.vx>0&&b.x>606&&b.x<622&&Math.abs(b.y-ay)<PH/2+8){ b.vx=-Math.abs(b.vx)*1.06; b.vy+=(b.y-ay)*5; g.beep(330,.05); }
-    if(b.x<-20){ ai++; g.beep(150,.3,'sawtooth'); serve(1); } if(b.x>660){ me++; g.beep(880,.15); g.burst(630,b.y,'#f5b524',14); serve(-1); }
-    g.score=me; if(me>=7) g.win('You win!'); else if(ai>=7) g.over('You lose'); },
+Kit.game({ id:'paddle-duel', title:'Paddle Duel', w:640, h:400, unit:'Points', pad:'ud',
+  modes:[['normal','vs Computer'],['easy','Easy'],['hard','Hard'],['two','2 Players']],
+  help:'First to 7 wins. Move your paddle as you hit to put spin on the ball, and aim with the edge for sharper angles. The ball speeds up with every return.',
+  keys:[['Left paddle','W S (or mouse / ↑ ↓ vs the computer)'],['Right paddle, 2 players','↑ ↓'],['Pause','P or Esc']],
+  start(g){ py=ay=200; pv=av=0; me=ai=0; best=0; tr=[]; flash=0; serve(Math.random()<.5?1:-1); },
+  update(dt,g){ const two=g.mode==='two', opy=py, oay=ay; flash-=dt;
+    if(two){ if(g.key('KeyW')) py-=400*dt; if(g.key('KeyS')) py+=400*dt; if(g.key('ArrowUp')) ay-=400*dt; if(g.key('ArrowDown')) ay+=400*dt; }
+    else { if(g.up) py-=400*dt; else if(g.dn) py+=400*dt; else if(g.ptr.ly!==g.ptr.y||g.ptr.down){ py+=(g.ptr.y-py)*Math.min(1,dt*20); g.ptr.ly=g.ptr.y; }
+      const [sp,err]=AI[g.mode]||AI.normal; let want=200; if(b.vx>0){ let ty=b.y+b.vy*((606-b.x)/Math.max(60,b.vx)); while(ty<8||ty>392) ty=ty<8?16-ty:784-ty; want=ty+Math.sin(g.t*1.3)*PH*err; } ay+=Kit.clamp(want-ay,-sp*dt,sp*dt); }
+    py=Kit.clamp(py,PH/2+6,394-PH/2); ay=Kit.clamp(ay,PH/2+6,394-PH/2); pv=(py-opy)/Math.max(dt,.001); av=(ay-oay)/Math.max(dt,.001);
+    if(serveT>0){ serveT-=dt; b.y=200+Math.sin(g.t*5)*4; if(serveT<=0){ b.vx=270*serveDir; b.vy=Kit.rnd(-140,140); g.sfx('bounce'); } return; }
+    b.vy+=b.spin*dt; b.spin*=1-1.5*dt; b.x+=b.vx*dt; b.y+=b.vy*dt;
+    if(b.y<14){ b.y=14; b.vy=Math.abs(b.vy); g.sfx('tick'); } if(b.y>386){ b.y=386; b.vy=-Math.abs(b.vy); g.sfx('tick'); }
+    const hit=(px,pyy,v,sign)=>{ b.vx=sign*Math.min(760,Math.abs(b.vx)*1.06+8); b.vy=b.vy*.6+(b.y-pyy)*5.2+v*.22; b.spin=v*.9; rally++; best=Math.max(best,rally); g.tone(sign>0?440:360,0,.06,'triangle',.09); g.burst(px,b.y,'#fff',6,120); if(rally>5&&rally%3===0) g.pop(320,60,'Rally '+rally,'#f5b524',14); };
+    if(b.vx<0&&b.x<38&&b.x>20&&Math.abs(b.y-py)<PH/2+9) hit(34,py,pv,1);
+    if(b.vx>0&&b.x>602&&b.x<620&&Math.abs(b.y-ay)<PH/2+9) hit(606,ay,av,-1);
+    if(b.x<-20||b.x>660){ const left=b.x<0; if(left) ai++; else me++; flash=.4; g.sfx(left&&!two?'bad':'good'); g.shake(6); g.burst(left?10:630,b.y,left?'#2f6fd0':'#e2362c',18,200);
+      g.score=me; g.stats=[['Final score',me+' - '+ai],['Longest rally',best]];
+      if(me>=7) return two?(g.noBest=true,g.win('Red wins!')):g.win('You win!'); if(ai>=7) return (g.noBest=true,g.over(two?'Blue wins!':'You lose')); serve(left?1:-1); } },
   draw(c,g){ c.fillStyle='#0b1a14'; c.fillRect(0,0,640,400); c.fillStyle=Kit.grad(c,0,0,640,400,'#1c7a52','#115c3c'); c.beginPath(); c.roundRect(10,10,620,380,10); c.fill();
     c.strokeStyle='#f3f2ec'; c.lineWidth=4; c.strokeRect(14,14,612,372); c.lineWidth=2; c.beginPath(); c.moveTo(14,200); c.lineTo(626,200); c.stroke();
-    c.fillStyle='rgba(0,0,0,.3)'; c.fillRect(322,6,5,392); c.fillStyle='#e8eef2'; c.fillRect(317,4,6,392); c.fillStyle='#8a939a'; for(let y=6;y<396;y+=8) c.fillRect(317,y,6,1.500);
-    c.font='900 54px sans-serif'; c.textAlign='center'; c.fillStyle='rgba(255,255,255,.22)'; c.fillText(me,240,70); c.fillText(ai,400,70); c.textAlign='left';
+    c.fillStyle='rgba(0,0,0,.3)'; c.fillRect(322,6,5,392); c.fillStyle='#e8eef2'; c.fillRect(317,4,6,392); c.fillStyle='#8a939a'; for(let y=6;y<396;y+=8) c.fillRect(317,y,6,1.5);
+    c.font='900 60px system-ui,sans-serif'; c.textAlign='center'; c.fillStyle='rgba(255,255,255,.2)'; c.fillText(me,240,76); c.fillText(ai,400,76); c.textAlign='left';
+    for(let i=0;i<7;i++){ c.fillStyle=i<me?'#e2362c':'rgba(255,255,255,.15)'; c.beginPath(); c.arc(200+i*-14+84,96,4,0,7); c.fill(); c.fillStyle=i<ai?'#4f9ae8':'rgba(255,255,255,.15)'; c.beginPath(); c.arc(358+i*14,96,4,0,7); c.fill(); }
     bat(c,26,py,'#e2362c',false); bat(c,614,ay,'#2f6fd0',true);
-    if(g.playing){ tr.push([b.x,b.y]); if(tr.length>8) tr.shift(); } tr.forEach((q,i)=>{ c.fillStyle=`rgba(255,255,255,${i/28})`; c.beginPath(); c.arc(q[0],q[1],3+i*.5,0,7); c.fill(); });
-    c.fillStyle='rgba(0,0,0,.3)'; c.beginPath(); c.ellipse(b.x+4,b.y+7,8,5,0,0,7); c.fill(); c.fillStyle=Kit.rgrad(c,b.x-3,b.y-3,10,'#ffffff','#ffb347'); c.beginPath(); c.arc(b.x,b.y,8,0,7); c.fill(); }
+    if(g.playing&&serveT<=0){ tr.push([b.x,b.y]); if(tr.length>9) tr.shift(); } else tr=[]; const hot=Math.abs(b.vx)>520;
+    tr.forEach((q,i)=>{ c.fillStyle=hot?`rgba(255,160,70,${i/22})`:`rgba(255,255,255,${i/28})`; c.beginPath(); c.arc(q[0],q[1],3+i*.5,0,7); c.fill(); });
+    c.fillStyle='rgba(0,0,0,.3)'; c.beginPath(); c.ellipse(b.x+4,b.y+7,8,5,0,0,7); c.fill(); c.fillStyle=Kit.rgrad(c,b.x-3,b.y-3,10,'#ffffff',hot?'#ff7a3a':'#ffb347'); c.beginPath(); c.arc(b.x,b.y,8,0,7); c.fill();
+    if(serveT>0&&g.playing){ Kit.text(c,serveT>.75?'Ready':serveT>.35?'Set':'Go!',320,150,26,'#f5b524','center'); c.fillStyle='#f5b524'; c.beginPath(); const d=serveDir; c.moveTo(320+d*26,200); c.lineTo(320+d*14,192); c.lineTo(320+d*14,208); c.fill(); }
+    if(flash>0){ c.fillStyle=`rgba(255,255,255,${flash*.4})`; c.fillRect(0,0,640,400); } }
 });
 })();
 </script>

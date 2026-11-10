@@ -9,30 +9,46 @@
 <script src="../../assets/kit.js"></script>
 <script>
 (function () {
-let y, vy, gates, sp;
-function flap(g){ vy=-330; g.beep(520,.05,'triangle'); }
-let scroll=0;
-Kit.game({ id:'paper-pilot', title:'Paper Pilot', w:420, h:620, help:'Tap, click or press Space to lift the paper plane through the gaps.',
-  start(){ y=300; vy=0; gates=[]; sp=0; }, tap(x,yy,g){ flap(g); }, key(c,g){ if(c==='Space'||c==='ArrowUp'||c==='KeyW') flap(g); },
-  update(dt,g){ vy+=900*dt; y+=vy*dt; sp-=dt; if(sp<=0){ sp=1.45; gates.push({x:440,gy:Kit.rnd(150,470),done:false}); }
-    const gap=Math.max(120,165-g.score*1.5);
-    for(const q of gates){ q.x-=170*dt; if(!q.done&&q.x<80){ q.done=true; g.score++; g.beep(880,.06); g.burst(100,y,'#ffffff',6,80); }
-      if(q.x<118&&q.x+56>82&&(y-10<q.gy-gap/2||y+10>q.gy+gap/2)){ g.beep(120,.4,'sawtooth'); return g.over(); } q.gap=gap; }
-    gates=gates.filter(q=>q.x>-60); if(y>610||y<-30){ g.beep(120,.4,'sawtooth'); g.over(); } },
-  draw(c,g){ if(g.playing) scroll+=2.800; c.fillStyle=Kit.grad(c,0,0,0,620,'#5fb4e8','#a9dbf5','#fde7c3'); c.fillRect(0,0,420,620);
-    c.fillStyle='#fff4c2'; c.beginPath(); c.arc(330,90,34,0,7); c.fill(); c.fillStyle='rgba(255,244,194,.3)'; c.beginPath(); c.arc(330,90,54,0,7); c.fill();
-    for(let i=0;i<5;i++) Kit.cloud(c,((i*150-scroll*.2)%700+700)%700-90,70+(i*83)%230,1+(i%3)*.3,'rgba(255,255,255,.85)');
-    c.fillStyle='#8cc9a0'; c.beginPath(); c.moveTo(0,620); for(let x=0;x<=420;x+=20) c.lineTo(x,520-Math.sin((x+scroll*.3)*.012)*36-Math.sin((x+scroll*.3)*.031)*12); c.lineTo(420,620); c.fill();
-    c.fillStyle='#5aa870'; c.beginPath(); c.moveTo(0,620); for(let x=0;x<=420;x+=20) c.lineTo(x,570-Math.sin((x+scroll*.6)*.02)*22); c.lineTo(420,620); c.fill();
-    for(const q of gates){ const gp=q.gap||160; for(const [y0,y1,cap] of [[-10,q.gy-gp/2,q.gy-gp/2-16],[q.gy+gp/2,630,q.gy+gp/2]]){
+const MODE={easy:[176,150],normal:[158,170],hard:[140,196]};
+let y, vy, gates, stars, sp, scroll, deadT, passed, gust, medal;
+function flap(g){ if(deadT>0) return; vy=-335; g.tone(520,700,.07,'triangle',.06); g.burst(92,y+4,'rgba(255,255,255,.8)',3,50,{grav:40,life:.3,round:true}); }
+Kit.game({ id:'paper-pilot', title:'Paper Pilot', w:420, h:620, btns:[['Space','FLAP']],
+  modes:[['normal','Normal'],['easy','Easy'],['hard','Hard']],
+  help:'Tap to lift the paper plane through the lighthouse gaps. Later towers slide up and down. Stars in the gaps are worth 3 extra points. Earn a bronze, silver or gold medal.',
+  keys:[['Flap','Space / ↑ / click / tap'],['Pause','P or Esc']],
+  start(g){ y=300; vy=-200; gates=[]; stars=[]; sp=1.2; scroll=0; deadT=0; passed=0; gust=0; },
+  tap(x,yy,g){ flap(g); }, key(c,g){ if(c==='Space'||c==='ArrowUp'||c==='KeyW') flap(g); },
+  update(dt,g){ const [gap0,spd0]=MODE[g.mode], spd=Math.min(spd0+90,spd0+passed*2.2);
+    if(deadT>0){ deadT-=dt; vy+=1100*dt; y=Math.min(596,y+vy*dt); if(deadT<=0) g.over(passed>=40?'Gold medal!':passed>=20?'Silver medal!':passed>=10?'Bronze medal!':'Game over'); return; }
+    scroll+=spd*dt; vy+=900*dt; y+=vy*dt; sp-=dt*spd/170;
+    if(sp<=0){ sp=1.5; const gy=Kit.rnd(150,450), mv=passed>=8&&Math.random()<Math.min(.6,.2+passed*.012); gates.push({x:450,gy,base:gy,done:false,mv,ph:Math.random()*6,gap:Math.max(118,gap0-passed*1.1)}); if(Math.random()<.45) stars.push({x:478,g:gates[gates.length-1]}); }
+    for(const q of gates){ q.x-=spd*dt; if(q.mv) q.gy=Kit.clamp(q.base+Math.sin(g.t*1.6+q.ph)*60,130,470);
+      if(!q.done&&q.x+28<100){ q.done=true; passed++; g.score++; g.sfx('good'); g.pop(100,y-26,'+1','#fff'); if(passed===10||passed===20||passed===40){ g.sfx('level'); g.banner(passed===10?'Bronze!':passed===20?'Silver!':'Gold!','Keep going'); } }
+      if(q.x<116&&q.x+56>86&&(y-9<q.gy-q.gap/2||y+9>q.gy+q.gap/2)){ deadT=1.1; vy=-240; g.sfx('hit'); g.shake(12); g.burst(104,y,['#ffffff','#dfe6ec'],18,200); return; } }
+    for(const s of stars){ s.x-=spd*dt; if(!s.got&&Math.abs(s.x-100)<20&&Math.abs(s.g.gy-y)<26){ s.got=true; g.score+=3; g.sfx('coin'); g.burst(s.x,s.g.gy,'#f5c531',12,160); g.pop(s.x,s.g.gy-18,'+3','#f5c531'); } }
+    gates=gates.filter((q)=>q.x>-70); stars=stars.filter((s)=>s.x>-30&&!s.got);
+    if(y>596){ y=596; deadT=.7; vy=0; g.sfx('thud'); g.shake(10); g.burst(100,600,'#8cc9a0',16,180,{up:120}); } if(y<8){ y=8; vy=60; }
+    g.stats=[['Towers',passed],['Medal',passed>=40?'Gold':passed>=20?'Silver':passed>=10?'Bronze':'None yet']]; },
+  draw(c,g){ const k=Math.min(1,passed/45); c.fillStyle=k<.4?Kit.grad(c,0,0,0,620,'#5fb4e8','#a9dbf5','#fde7c3'):k<.75?Kit.grad(c,0,0,0,620,'#3a3a7a','#d0708a','#fbc98a'):Kit.grad(c,0,0,0,620,'#070b20','#1a2450','#3a4a7c'); c.fillRect(0,0,420,620);
+    if(k>=.75) Kit.stars(c,420,420,0,50);
+    c.fillStyle=k>=.75?'#e9e4d0':'#fff4c2'; c.beginPath(); c.arc(330,90+k*60,34,0,7); c.fill(); c.fillStyle='rgba(255,244,194,.25)'; c.beginPath(); c.arc(330,90+k*60,54,0,7); c.fill();
+    for(let i=0;i<5;i++) Kit.cloud(c,((i*150-scroll*.2)%700+700)%700-90,70+(i*83)%230,1+(i%3)*.3,k>=.75?'rgba(160,180,230,.3)':'rgba(255,255,255,.85)');
+    c.fillStyle=k>=.75?'#22344a':'#8cc9a0'; c.beginPath(); c.moveTo(0,620); for(let x=0;x<=420;x+=20) c.lineTo(x,520-Math.sin((x+scroll*.3)*.012)*36-Math.sin((x+scroll*.3)*.031)*12); c.lineTo(420,620); c.fill();
+    c.fillStyle=k>=.75?'#16263a':'#5aa870'; c.beginPath(); c.moveTo(0,620); for(let x=0;x<=420;x+=20) c.lineTo(x,570-Math.sin((x+scroll*.6)*.02)*22); c.lineTo(420,620); c.fill();
+    c.fillStyle='#2f7fb8'; c.fillRect(0,604,420,16); c.strokeStyle='rgba(255,255,255,.4)'; c.lineWidth=1.5; for(let i=0;i<8;i++){ const x=((i*60-scroll)%480+480)%480-30; c.beginPath(); c.moveTo(x,610); c.quadraticCurveTo(x+8,606,x+16,610); c.stroke(); }
+    for(const q of gates){ const gp=q.gap; for(const [y0,y1,cap,up] of [[-10,q.gy-gp/2,q.gy-gp/2-16,false],[q.gy+gp/2,606,q.gy+gp/2,true]]){
         c.fillStyle=Kit.grad(c,q.x,0,q.x+56,0,'#f4ead8','#fffaf0','#d9cdb8'); c.fillRect(q.x+4,y0,48,y1-y0);
-        c.fillStyle='#c94f4f'; for(let y=Math.ceil(y0/36)*36;y<y1;y+=36) c.fillRect(q.x+4,Math.max(y0,y),48,Math.min(12,y1-y));
-        c.fillStyle='rgba(0,0,0,.12)'; c.fillRect(q.x+44,y0,8,y1-y0);
-        c.fillStyle='#3a4856'; c.beginPath(); c.roundRect(q.x-3,cap,62,16,4); c.fill(); c.fillStyle='#f5b524'; c.fillRect(q.x-3,cap+6,62,4); } }
-    const a=Kit.clamp(vy/600,-.5,.9); c.strokeStyle='rgba(255,255,255,.7)'; c.lineWidth=2; c.setLineDash([6,7]); c.beginPath(); c.moveTo(82,y); c.quadraticCurveTo(50,y+vy*.02,14,y-vy*.05); c.stroke(); c.setLineDash([]);
+        c.fillStyle='#c94f4f'; for(let yy=Math.ceil(y0/36)*36;yy<y1;yy+=36) c.fillRect(q.x+4,Math.max(y0,yy),48,Math.min(12,y1-yy));
+        c.fillStyle='rgba(0,0,0,.12)'; c.fillRect(q.x+44,y0,8,y1-y0); c.fillStyle='#16283a'; for(let yy=(up?cap+34:cap-30);up?yy<y1-20:yy>y0+10;yy+=up?72:-72){ c.beginPath(); c.roundRect(q.x+22,yy,10,14,[5,5,0,0]); c.fill(); }
+        c.fillStyle='#3a4856'; c.beginPath(); c.roundRect(q.x-3,cap,62,16,4); c.fill(); c.fillStyle='#f5b524'; c.fillRect(q.x-3,cap+6,62,4);
+        if(up){ c.fillStyle='rgba(255,243,176,'+(.5+.4*Math.sin(g.t*4+q.ph))+')'; c.beginPath(); c.arc(q.x+28,cap-2,7,Math.PI,0); c.fill(); } }
+      if(q.mv){ c.fillStyle='rgba(255,255,255,.7)'; c.beginPath(); c.moveTo(q.x+28,q.gy-gp/2+8); c.lineTo(q.x+22,q.gy-gp/2+16); c.lineTo(q.x+34,q.gy-gp/2+16); c.fill(); } }
+    for(const s of stars){ c.fillStyle='rgba(245,197,49,.25)'; c.beginPath(); c.arc(s.x,s.g.gy,17,0,7); c.fill(); Kit.star(c,s.x,s.g.gy,12,'#f5c531',g.t*2); }
+    const a=deadT>0?Math.min(1.5,(1.1-deadT)*3):Kit.clamp(vy/600,-.5,.9); c.strokeStyle='rgba(255,255,255,.7)'; c.lineWidth=2; c.setLineDash([6,7]); c.beginPath(); c.moveTo(82,y); c.quadraticCurveTo(50,y+vy*.02,14,y-vy*.05); c.stroke(); c.setLineDash([]);
     c.save(); c.translate(100,y); c.rotate(a); c.fillStyle='rgba(0,0,0,.15)'; c.beginPath(); c.moveTo(24,6); c.lineTo(-20,-6); c.lineTo(-20,18); c.fill();
     c.fillStyle='#ffffff'; c.beginPath(); c.moveTo(26,0); c.lineTo(-20,-14); c.lineTo(-11,0); c.closePath(); c.fill(); c.fillStyle='#dfe6ec'; c.beginPath(); c.moveTo(26,0); c.lineTo(-11,0); c.lineTo(-20,13); c.closePath(); c.fill();
-    c.fillStyle='#b7c2cc'; c.beginPath(); c.moveTo(26,0); c.lineTo(-11,0); c.lineTo(-13,8); c.closePath(); c.fill(); c.strokeStyle='#e2362c'; c.lineWidth=1.500; c.beginPath(); c.moveTo(-14,-9); c.lineTo(6,-4); c.stroke(); c.restore(); }
+    c.fillStyle='#b7c2cc'; c.beginPath(); c.moveTo(26,0); c.lineTo(-11,0); c.lineTo(-13,8); c.closePath(); c.fill(); c.strokeStyle='#e2362c'; c.lineWidth=1.5; c.beginPath(); c.moveTo(-14,-9); c.lineTo(6,-4); c.stroke(); c.strokeStyle='#2f6fd0'; c.beginPath(); c.moveTo(-16,-6); c.lineTo(0,-2.5); c.stroke(); c.restore();
+    Kit.text(c,''+g.score,210,70,44,'#ffffff','center'); const md=passed>=40?'#f5c531':passed>=20?'#c9d2da':passed>=10?'#c98a4a':null; if(md){ c.fillStyle=md; c.beginPath(); c.arc(30,30,14,0,7); c.fill(); Kit.star(c,30,30,8,'rgba(255,255,255,.8)'); } }
 });
 })();
 </script>

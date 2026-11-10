@@ -9,28 +9,41 @@
 <script src="../../assets/kit.js"></script>
 <script>
 (function () {
-const WORDS='road lane exit ramp turn fast gear tire fuel dash horn sign mile toll park ride race drift brake speed truck coast merge route cargo wheel motor pilot orbit comet laser pixel robot magic storm cloud flame frost stone river ocean eagle tiger piano guitar candle planet rocket jungle castle bridge anchor harbor signal tunnel engine highway mirror shadow thunder lantern compass diamond captain'.split(' ');
-let words, target, typed, timer, lives;
-Kit.game({ id:'key-storm', title:'Key Storm', w:640, h:480, typing:true, help:'Type the falling words before they reach the bottom. Start typing a word to lock on to it. Three misses ends the game.',
-  start(){ words=[]; target=null; typed=0; timer=.5; lives=3; },
-  key(code,g,ch){ if(!ch||ch.length!==1) return; ch=ch.toLowerCase(); if(!target){ target=words.filter(w=>w.t[0]===ch).sort((a,b)=>b.y-a.y)[0]||null; typed=0; }
-    if(target&&target.t[typed]===ch){ typed++; g.beep(600+typed*30,.03); if(typed===target.t.length){ g.score+=target.t.length*10; g.burst(target.x+30,target.y,'#7ab8f5',14); target.dead=true; target=null; g.beep(990,.08); } } else g.beep(160,.05,'sawtooth'); },
-  update(dt,g){ timer-=dt; if(timer<=0){ timer=Math.max(.7,2-g.t/60); let t; do{ t=Kit.pick(WORDS); }while(words.some(w=>w.t[0]===t[0])&&words.length<12); words.push({t,x:Kit.rnd(30,520),y:-10,v:Kit.rnd(28,44)+g.t*.5}); }
-    for(const w of words){ w.y+=w.v*dt; if(w.y>470){ w.dead=true; lives--; g.shake(8); if(target===w) target=null; g.beep(110,.3,'sawtooth'); } }
-    words=words.filter(w=>!w.dead); if(lives<=0) g.over(); },
+const W1='road lane exit ramp turn fast gear tire fuel dash horn sign mile toll park ride race map taxi bus van cab jet sky sun fog ice mud'.split(' ');
+const W2='drift brake speed truck coast merge route cargo wheel motor pilot orbit comet laser pixel robot magic storm cloud flame frost stone river ocean eagle tiger piano'.split(' ');
+const W3='guitar candle planet rocket jungle castle bridge anchor harbor signal tunnel engine highway mirror shadow thunder lantern compass diamond captain volcano blizzard monsoon tornado lightning hurricane'.split(' ');
+const MODE={easy:[.75,5],normal:[1,3],hard:[1.35,3]};
+let words, target, typed, timer, lives, combo, keys, hitsN, done, bolts, flashT;
+function pickWord(t){ const tier=t<20?W1:t<50?(Math.random()<.5?W1:W2):t<90?(Math.random()<.6?W2:W3):(Math.random()<.4?W2:W3); let w, n=0; do{ w=Kit.pick(tier); n++; }while(words.some((q)=>q.t[0]===w[0])&&n<30); return w; }
+function finish(w,g){ const pts=w.t.length*10*Math.min(5,1+Math.floor(combo/5)); g.score+=pts; done++; w.dead=true; bolts.push({x:w.x+w.tw/2,y:w.y,t:.25,sx:w.x+w.tw/2+Kit.rnd(-40,40)}); flashT=.08; g.sfx('good'); g.noise(.12,.1,3000); g.burst(w.x+w.tw/2,w.y,['#7ab8f5','#fff'],14,170); g.pop(w.x+w.tw/2,w.y-18,'+'+pts,'#fff3b0');
+  if(w.gold){ g.sfx('boom'); g.shake(10); for(const q of words) if(!q.dead){ q.dead=true; g.score+=q.t.length*5; bolts.push({x:q.x+q.tw/2,y:q.y,t:.3,sx:q.x}); g.burst(q.x+q.tw/2,q.y,'#f5c531',10,160); } g.pop(320,200,'STORM CLEARED!','#f5c531',22); } target=null; typed=0; }
+Kit.game({ id:'key-storm', title:'Key Storm', w:640, h:480, typing:true,
+  modes:[['normal','Normal'],['easy','Easy'],['hard','Hard']],
+  help:'Type the words before they reach the city. Start a word to lock on, and keep a streak going for up to 5x points. Finish a golden word to clear the whole sky. Your speed and accuracy are shown at the end.',
+  keys:[['Type','Letter keys'],['Drop the locked word','Backspace'],['Pause','Esc']],
+  start(g){ words=[]; target=null; typed=0; timer=.6; lives=MODE[g.mode][1]; combo=0; keys=0; hitsN=0; done=0; bolts=[]; flashT=0; },
+  key(code,g,ch){ if(code==='Backspace'){ target=null; typed=0; return; } if(!ch||ch.length!==1||!/[a-z]/i.test(ch)) return; ch=ch.toLowerCase(); keys++;
+    if(!target){ target=words.filter((w)=>!w.dead&&w.t[0]===ch).sort((a,b)=>b.y-a.y)[0]||null; typed=0; }
+    if(target&&target.t[typed]===ch){ typed++; hitsN++; combo++; g.tone(500+typed*40,0,.03,'square',.04); if(typed===target.t.length) finish(target,g); }
+    else { combo=0; g.sfx('bad'); g.shake(3); } },
+  update(dt,g){ const m=MODE[g.mode][0]; flashT-=dt; for(const b of bolts) b.t-=dt; bolts=bolts.filter((b)=>b.t>0);
+    timer-=dt; if(timer<=0){ timer=Math.max(.65,2.1-g.t/55)/m; const t=pickWord(g.t); g.ctx.font='700 21px ui-monospace,monospace'; words.push({t,x:Kit.rnd(30,480),y:54,v:(Kit.rnd(24,38)+g.t*.42)*m,tw:g.ctx.measureText(t).width,gold:g.t>15&&Math.random()<.06}); }
+    for(const w of words){ w.y+=w.v*dt; if(w.y>424){ w.dead=true; lives--; combo=0; if(target===w){ target=null; typed=0; } g.sfx('boom'); g.shake(10); g.burst(w.x+w.tw/2,440,['#f08a52','#39434e'],18,200,{up:120}); } }
+    words=words.filter((w)=>!w.dead); const mins=Math.max(g.t,3)/60; g.stats=[['Words',done],['Speed',Math.round(hitsN/5/mins)+' wpm'],['Accuracy',(keys?Math.round(hitsN/keys*100):100)+'%']];
+    if(lives<=0) g.over('The storm broke through'); },
   draw(c,g){ c.fillStyle=Kit.grad(c,0,0,0,480,'#141a2c','#263248','#3a4a5c'); c.fillRect(0,0,640,480);
-    const fl=Math.sin(g.t*1.7)>.985; if(fl){ c.fillStyle='rgba(255,255,255,.12)'; c.fillRect(0,0,640,480); c.strokeStyle='#fff8c0'; c.lineWidth=3; c.beginPath(); c.moveTo(430,40); c.lineTo(410,120); c.lineTo(440,120); c.lineTo(405,220); c.stroke(); }
-    for(let i=0;i<7;i++) Kit.cloud(c,i*100-30+Math.sin(g.t*.3+i)*10,26+(i%2)*14,2,i%2?'#2a3446':'#354156');
+    if(flashT>0){ c.fillStyle='rgba(255,255,255,.14)'; c.fillRect(0,0,640,480); }
     c.strokeStyle='rgba(160,200,255,.3)'; c.lineWidth=1; for(let i=0;i<70;i++){ const x=(i*97+g.t*60)%660-10, y=(i*53+g.t*520)%480; c.beginPath(); c.moveTo(x,y); c.lineTo(x-3,y+12); c.stroke(); }
-    c.fillStyle='#0f141d'; for(let i=0;i<14;i++){ const h=30+(i*37)%50; c.fillRect(i*48-4,474-h,44,h); c.fillStyle='rgba(255,214,130,.6)'; for(let wy=474-h+6;wy<468;wy+=10) for(let wx=i*48+2;wx<i*48+34;wx+=9) if((wx+wy+i)%4<2) c.fillRect(wx,wy,4,5); c.fillStyle='#0f141d'; }
-    c.font='700 21px monospace'; c.textBaseline='middle';
-    for(const w of words){ const on=w===target, tw=c.measureText(w.t).width;
-      c.fillStyle='rgba(0,0,0,.3)'; c.beginPath(); c.roundRect(w.x-10,w.y-12,tw+24,32,16); c.fill();
-      c.fillStyle=on?'#fff3c4':'#e8f1ff'; c.beginPath(); c.roundRect(w.x-12,w.y-16,tw+24,32,16); c.fill(); if(on){ c.strokeStyle='#f5b524'; c.lineWidth=3; c.beginPath(); c.roundRect(w.x-12,w.y-16,tw+24,32,16); c.stroke(); }
-      c.fillStyle='#7ab8f5'; c.beginPath(); c.moveTo(w.x+tw/2-5,w.y+16); c.lineTo(w.x+tw/2,w.y+25); c.lineTo(w.x+tw/2+5,w.y+16); c.fill();
-      c.fillStyle='#1a2436'; c.fillText(w.t,w.x,w.y+1); if(on){ c.fillStyle='#1f9a55'; c.fillText(w.t.slice(0,typed),w.x,w.y+1); } }
-    c.textBaseline='alphabetic'; for(let i=0;i<3;i++){ c.fillStyle=i<lives?'#e2362c':'rgba(255,255,255,.15)'; const x=22+i*26, y=20; c.beginPath(); c.moveTo(x,y+8); c.bezierCurveTo(x-14,y-2,x-5,y-11,x,y-4); c.bezierCurveTo(x+5,y-11,x+14,y-2,x,y+8); c.fill(); }
-    c.fillStyle='#e2362c'; c.fillRect(0,474,640,6); }
+    for(let i=0;i<7;i++) Kit.cloud(c,i*100-30+Math.sin(g.t*.3+i)*10,26+(i%2)*14,2,i%2?'#2a3446':'#354156');
+    for(const b of bolts){ c.strokeStyle='#fff8c0'; c.lineWidth=3; c.shadowColor='#fff8c0'; c.shadowBlur=12; c.beginPath(); c.moveTo(b.sx,44); const steps=5; for(let i=1;i<=steps;i++) c.lineTo(Kit.lerp(b.sx,b.x,i/steps)+(i<steps?Math.sin(i*7+b.x)*14:0),Kit.lerp(44,b.y,i/steps)); c.stroke(); c.shadowBlur=0; }
+    c.fillStyle='#0f141d'; for(let i=0;i<14;i++){ const h=30+(i*37)%50; c.fillStyle='#0f141d'; c.fillRect(i*48-4,474-h,44,h); c.fillStyle='rgba(255,214,130,.6)'; for(let wy=474-h+6;wy<468;wy+=10) for(let wx=i*48+2;wx<i*48+34;wx+=9) if((wx+wy+i)%4<2) c.fillRect(wx,wy,4,5); }
+    c.strokeStyle='rgba(127,208,255,.5)'; c.lineWidth=2; c.beginPath(); c.moveTo(0,424); for(let x=0;x<=640;x+=16) c.lineTo(x,424+Math.sin(x*.05+g.t*3)*2); c.stroke();
+    c.font='700 21px ui-monospace,monospace'; c.textBaseline='middle';
+    for(const w of words){ const on=w===target, tw=w.tw; c.fillStyle='rgba(0,0,0,.3)'; c.beginPath(); c.roundRect(w.x-10,w.y-12,tw+24,32,16); c.fill();
+      c.fillStyle=w.gold?'#ffe9a0':on?'#fff3c4':'#e8f1ff'; c.beginPath(); c.roundRect(w.x-12,w.y-16,tw+24,32,16); c.fill(); if(on||w.gold){ c.strokeStyle=w.gold?'#f5c531':'#f5b524'; c.lineWidth=3; c.beginPath(); c.roundRect(w.x-12,w.y-16,tw+24,32,16); c.stroke(); }
+      c.fillStyle=w.gold?'#f5c531':'#7ab8f5'; c.beginPath(); c.moveTo(w.x+tw/2-5,w.y+16); c.lineTo(w.x+tw/2,w.y+25); c.lineTo(w.x+tw/2+5,w.y+16); c.fill();
+      c.font='700 21px ui-monospace,monospace'; c.textAlign='left'; c.fillStyle='#1a2436'; c.fillText(w.t,w.x,w.y+1); if(on){ c.fillStyle='#1f9a55'; c.fillText(w.t.slice(0,typed),w.x,w.y+1); const cw=c.measureText(w.t.slice(0,typed)).width; c.fillStyle='#e2362c'; c.fillRect(w.x+cw,w.y+11,c.measureText(w.t[typed]||' ').width,2.5); } }
+    c.textBaseline='alphabetic'; Kit.hearts(c,22,22,lives,MODE[g.mode][1]); const mult=Math.min(5,1+Math.floor(combo/5)); Kit.text(c,'x'+mult,628,30,20,mult>1?'#f5b524':'#69747e','right'); Kit.bar(c,520,14,70,10,(combo%5)/5,'#f5b524'); c.fillStyle='#e2362c'; c.fillRect(0,474,640,6); }
 });
 })();
 </script>

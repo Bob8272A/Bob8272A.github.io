@@ -9,33 +9,44 @@
 <script src="../../assets/kit.js"></script>
 <script>
 (function () {
-const COLS=6, ROWS=5, CW=78, CH=96; let cards, a, b, wait, found;
-const SH=['circle','square','tri','diamond','star','ring','cross','bar','hex','moon','drop','heart','bolt','dots','arrow'];
-function shape(c,k,x,y){ c.fillStyle=c.strokeStyle=`hsl(${k*24},80%,60%)`; c.lineWidth=7; c.beginPath(); const s=20;
-  switch(SH[k]){ case 'circle': c.arc(x,y,s,0,7); c.fill(); break; case 'square': c.fillRect(x-s,y-s,2*s,2*s); break;
-    case 'tri': c.moveTo(x,y-s); c.lineTo(x+s,y+s); c.lineTo(x-s,y+s); c.fill(); break; case 'diamond': c.moveTo(x,y-s-4); c.lineTo(x+s,y); c.lineTo(x,y+s+4); c.lineTo(x-s,y); c.fill(); break;
-    case 'star': for(let i=0;i<10;i++){ const r=i%2?9:s+3, t=i/10*6.283-1.57; c.lineTo(x+Math.cos(t)*r,y+Math.sin(t)*r); } c.fill(); break;
-    case 'ring': c.arc(x,y,s-3,0,7); c.stroke(); break; case 'cross': c.moveTo(x-s,y-s); c.lineTo(x+s,y+s); c.moveTo(x+s,y-s); c.lineTo(x-s,y+s); c.stroke(); break;
-    case 'bar': c.fillRect(x-s,y-6,2*s,12); break; case 'hex': for(let i=0;i<6;i++){ const t=i/6*6.283; c.lineTo(x+Math.cos(t)*s,y+Math.sin(t)*s); } c.fill(); break;
-    case 'moon': c.arc(x,y,s,.6,5.6); c.fill(); break; case 'drop': c.moveTo(x,y-s-4); c.quadraticCurveTo(x+s+6,y+s,x,y+s); c.quadraticCurveTo(x-s-6,y+s,x,y-s-4); c.fill(); break;
-    case 'heart': c.moveTo(x,y+s); c.bezierCurveTo(x-s*2,y-4,x-s*.6,y-s*1.4,x,y-6); c.bezierCurveTo(x+s*.6,y-s*1.4,x+s*2,y-4,x,y+s); c.fill(); break;
-    case 'bolt': c.moveTo(x+4,y-s-4); c.lineTo(x-s+4,y+4); c.lineTo(x,y+4); c.lineTo(x-4,y+s+4); c.lineTo(x+s-4,y-4); c.lineTo(x,y-4); c.fill(); break;
-    case 'dots': [[-11,-11],[11,-11],[-11,11],[11,11]].forEach(([p,q])=>{ c.moveTo(x+p+7,y+q); c.arc(x+p,y+q,7,0,7); }); c.fill(); break;
-    case 'arrow': c.moveTo(x,y-s-2); c.lineTo(x+s,y+2); c.lineTo(x+8,y+2); c.lineTo(x+8,y+s); c.lineTo(x-8,y+s); c.lineTo(x-8,y+2); c.lineTo(x-s,y+2); c.fill(); break; } }
-Kit.game({ id:'pair-up', title:'Pair Up', w:480, h:500, unit:'Flips', low:true, help:'Click two cards to flip them. Matching pairs stay face up. Find all 15 pairs in as few flips as you can.',
-  start(){ cards=Kit.shuffle([...Array(30).keys()].map(i=>({k:i>>1,up:false,done:false}))); a=b=null; wait=0; found=0; },
-  tap(x,y,g){ if(wait>0) return; const cx=Math.floor((x-6)/CW), cy=Math.floor((y-10)/CH); if(cx<0||cy<0||cx>=COLS||cy>=ROWS) return; const q=cards[cy*COLS+cx]; if(q.up||q.done) return;
-    q.up=true; g.score++; g.beep(520,.04,'triangle'); if(!a) a=q; else { b=q; if(a.k===b.k){ a.done=b.done=true; a=b=null; found++; g.beep(880,.1); g.burst(6+cx*CW+CW/2,10+cy*CH+CH/2,'#f5d142',14); if(found===15) g.win('All matched!'); } else wait=.8; } },
-  update(dt){ if(wait>0){ wait-=dt; if(wait<=0){ a.up=b.up=false; a=b=null; } } },
-  draw(c,g){ c.fillStyle=Kit.rgrad(c,240,250,360,'#1f6b46','#0f3a26'); c.fillRect(0,0,480,500);
-    cards.forEach((q,i)=>{ const x=6+(i%COLS)*CW, y=10+Math.floor(i/COLS)*CH, up=q.up||q.done; c.globalAlpha=q.done?.55:1;
-      c.fillStyle='rgba(0,0,0,.35)'; c.beginPath(); c.roundRect(x+6,y+8,CW-8,CH-8,9); c.fill();
-      if(up){ c.fillStyle=Kit.grad(c,x,y,x,y+CH,'#fffdf5','#ece4d0'); c.beginPath(); c.roundRect(x+4,y+4,CW-8,CH-8,9); c.fill(); c.strokeStyle='#d8ccb0'; c.lineWidth=1.500; c.beginPath(); c.roundRect(x+8,y+8,CW-16,CH-16,6); c.stroke(); shape(c,q.k,x+CW/2,y+CH/2);
-        if(q.done){ c.fillStyle='#2f8f52'; c.beginPath(); c.arc(x+CW-16,y+16,7,0,7); c.fill(); c.strokeStyle='#fff'; c.lineWidth=2; c.beginPath(); c.moveTo(x+CW-20,y+16); c.lineTo(x+CW-17,y+19); c.lineTo(x+CW-12,y+13); c.stroke(); } }
-      else { c.fillStyle=Kit.grad(c,x,y,x+CW,y+CH,'#c9463c','#8f2a24'); c.beginPath(); c.roundRect(x+4,y+4,CW-8,CH-8,9); c.fill(); c.strokeStyle='#f6e2b0'; c.lineWidth=2; c.beginPath(); c.roundRect(x+9,y+9,CW-18,CH-18,6); c.stroke();
-        c.save(); c.beginPath(); c.roundRect(x+11,y+11,CW-22,CH-22,5); c.clip(); c.strokeStyle='rgba(246,226,176,.35)'; c.lineWidth=1; for(let k=-CH;k<CW;k+=9){ c.beginPath(); c.moveTo(x+k,y); c.lineTo(x+k+CH,y+CH); c.moveTo(x+k+CH,y); c.lineTo(x+k,y+CH); c.stroke(); } c.restore();
-        c.fillStyle='#f6e2b0'; c.beginPath(); c.moveTo(x+CW/2,y+CH/2-10); c.lineTo(x+CW/2+8,y+CH/2); c.lineTo(x+CW/2,y+CH/2+10); c.lineTo(x+CW/2-8,y+CH/2); c.fill(); }
-      c.globalAlpha=1; }); }
+const SZ={normal:[5,4],easy:[4,3],hard:[6,5]}, SH=['circle','square','tri','diamond','star','ring','cross','bar','hex','moon','drop','heart','bolt','dots','arrow'];
+let COLS, ROWS, CW, CH, OX, cards, a, b, wait, found, flips, streak, peek, doneT;
+function shape(c,k,x,y,s){ c.fillStyle=c.strokeStyle=`hsl(${k*24},72%,48%)`; c.lineWidth=s*.34; c.lineCap='round'; c.beginPath();
+  switch(SH[k]){ case 'circle': c.arc(x,y,s,0,7); c.fill(); break; case 'square': c.roundRect(x-s,y-s,2*s,2*s,s*.2); c.fill(); break;
+    case 'tri': c.moveTo(x,y-s); c.lineTo(x+s,y+s); c.lineTo(x-s,y+s); c.fill(); break; case 'diamond': c.moveTo(x,y-s*1.2); c.lineTo(x+s,y); c.lineTo(x,y+s*1.2); c.lineTo(x-s,y); c.fill(); break;
+    case 'star': for(let i=0;i<10;i++){ const r=i%2?s*.48:s*1.15, t=i/10*6.283-1.57; c.lineTo(x+Math.cos(t)*r,y+Math.sin(t)*r); } c.fill(); break;
+    case 'ring': c.arc(x,y,s*.85,0,7); c.stroke(); break; case 'cross': c.moveTo(x-s,y-s); c.lineTo(x+s,y+s); c.moveTo(x+s,y-s); c.lineTo(x-s,y+s); c.stroke(); break;
+    case 'bar': c.roundRect(x-s,y-s*.3,2*s,s*.6,s*.3); c.fill(); break; case 'hex': for(let i=0;i<6;i++){ const t=i/6*6.283; c.lineTo(x+Math.cos(t)*s,y+Math.sin(t)*s); } c.fill(); break;
+    case 'moon': c.arc(x,y,s,.6,5.6); c.fill(); break; case 'drop': c.moveTo(x,y-s*1.2); c.quadraticCurveTo(x+s*1.3,y+s,x,y+s); c.quadraticCurveTo(x-s*1.3,y+s,x,y-s*1.2); c.fill(); break;
+    case 'heart': c.moveTo(x,y+s); c.bezierCurveTo(x-s*2,y-s*.2,x-s*.6,y-s*1.4,x,y-s*.3); c.bezierCurveTo(x+s*.6,y-s*1.4,x+s*2,y-s*.2,x,y+s); c.fill(); break;
+    case 'bolt': c.moveTo(x+s*.2,y-s*1.2); c.lineTo(x-s*.8,y+s*.2); c.lineTo(x,y+s*.2); c.lineTo(x-s*.2,y+s*1.2); c.lineTo(x+s*.8,y-s*.2); c.lineTo(x,y-s*.2); c.fill(); break;
+    case 'dots': [[-.55,-.55],[.55,-.55],[-.55,.55],[.55,.55]].forEach(([p,q])=>{ c.moveTo(x+p*s+s*.35,y+q*s); c.arc(x+p*s,y+q*s,s*.35,0,7); }); c.fill(); break;
+    case 'arrow': c.moveTo(x,y-s*1.1); c.lineTo(x+s,y+s*.1); c.lineTo(x+s*.4,y+s*.1); c.lineTo(x+s*.4,y+s); c.lineTo(x-s*.4,y+s); c.lineTo(x-s*.4,y+s*.1); c.lineTo(x-s,y+s*.1); c.fill(); break; }
+  c.fillStyle='rgba(255,255,255,.3)'; c.beginPath(); c.arc(x-s*.35,y-s*.4,s*.18,0,7); c.fill(); }
+Kit.game({ id:'pair-up', title:'Pair Up', w:480, h:540, unit:'Flips', low:true,
+  modes:[['normal','20 cards'],['easy','12 cards'],['hard','30 cards']],
+  help:'You get a quick look at every card, then they turn face down. Flip two at a time to find the pairs. Fewer flips is a better score, and consecutive matches build a streak.',
+  keys:[['Flip a card','Click or tap'],['Pause','P or Esc']],
+  start(g){ [COLS,ROWS]=SZ[g.mode]; CW=Math.min(96,468/COLS); CH=Math.min(118,470/ROWS); OX=(480-COLS*CW)/2; const n=COLS*ROWS/2; cards=Kit.shuffle([...Array(n*2).keys()].map((i)=>({k:(i>>1)*(n<=10?1:1)%15,up:true,done:false,f:1,tf:1,shake:0}))); a=b=null; wait=0; found=0; flips=0; streak=0; peek=1.6; doneT=0; },
+  tap(x,y,g){ if(wait>0||peek>0||doneT>0) return; const cx=Math.floor((x-OX)/CW), cy=Math.floor((y-10)/CH); if(cx<0||cy<0||cx>=COLS||cy>=ROWS) return; const q=cards[cy*COLS+cx]; if(q.up||q.done) return;
+    q.up=true; q.tf=1; flips++; g.score=flips; g.sfx('flip'); if(!a) a=q; else { b=q; if(a.k===b.k){ a.done=b.done=true; found++; streak++; g.sfx('good'); if(streak>1){ g.pop(OX+cx*CW+CW/2,10+cy*CH+10,'Streak x'+streak,'#f5c531',14); g.tone(660+streak*80,0,.12,'triangle',.07); }
+        for(const k of [a,b]){ const i=cards.indexOf(k); g.burst(OX+(i%COLS)*CW+CW/2,10+Math.floor(i/COLS)*CH+CH/2,['#f5d142','#fff'],12,160); } a=b=null; if(found===cards.length/2) doneT=1; }
+      else { wait=.85; streak=0; a.shake=b.shake=1; g.tone(200,150,.12,'square',.04); } } },
+  update(dt,g){ if(peek>0){ peek-=dt; if(peek<=0){ cards.forEach((q)=>{ q.up=false; q.tf=0; }); g.sfx('flip'); g.t=0; } }
+    for(const q of cards){ q.f+=(q.tf-q.f)*Math.min(1,dt*14); q.shake=Math.max(0,q.shake-dt*2.5); }
+    if(wait>0){ wait-=dt; if(wait<=0){ a.up=b.up=false; a.tf=b.tf=0; a=b=null; g.sfx('flip'); } }
+    g.stats=[['Time',Math.floor(g.t)+' s'],['Pairs',found+' / '+cards.length/2]]; if(doneT>0){ doneT-=dt; if(doneT<=0) g.win('All matched!'); } },
+  draw(c,g){ c.fillStyle=Kit.rgrad(c,240,250,380,'#1f6b46','#0f3a26'); c.fillRect(0,0,480,540);
+    cards.forEach((q,i)=>{ const x=OX+(i%COLS)*CW, y=10+Math.floor(i/COLS)*CH, face=q.f>.5, sx=Math.abs(q.f*2-1), cx=x+CW/2+Math.sin(q.shake*30)*q.shake*5, w=(CW-10)*sx, h=CH-10; c.globalAlpha=q.done?.6:1;
+      c.fillStyle='rgba(0,0,0,.35)'; c.beginPath(); c.roundRect(cx-w/2+3,y+9,w,h,9); c.fill();
+      if(face){ c.fillStyle=Kit.grad(c,x,y,x,y+CH,'#fffdf5','#ece4d0'); c.beginPath(); c.roundRect(cx-w/2,y+5,w,h,9); c.fill(); if(sx>.5){ c.strokeStyle='#d8ccb0'; c.lineWidth=1.5; c.beginPath(); c.roundRect(cx-w/2+4,y+9,w-8,h-8,6); c.stroke(); c.save(); c.translate(cx,y+5+h/2); c.scale(sx,1); shape(c,q.k,0,0,Math.min(CW,CH)*.22); c.restore();
+          if(q.done){ c.fillStyle='#2f8f52'; c.beginPath(); c.arc(cx+w/2-13,y+18,7,0,7); c.fill(); c.strokeStyle='#fff'; c.lineWidth=2; c.beginPath(); c.moveTo(cx+w/2-17,y+18); c.lineTo(cx+w/2-14,y+21); c.lineTo(cx+w/2-9,y+15); c.stroke(); } } }
+      else { c.fillStyle=Kit.grad(c,x,y,x+CW,y+CH,'#c9463c','#8f2a24'); c.beginPath(); c.roundRect(cx-w/2,y+5,w,h,9); c.fill(); if(sx>.5){ c.strokeStyle='#f6e2b0'; c.lineWidth=2; c.beginPath(); c.roundRect(cx-w/2+5,y+10,w-10,h-10,6); c.stroke();
+          c.save(); c.beginPath(); c.roundRect(cx-w/2+7,y+12,w-14,h-14,5); c.clip(); c.strokeStyle='rgba(246,226,176,.35)'; c.lineWidth=1; for(let k=-CH;k<CW;k+=9){ c.beginPath(); c.moveTo(x+k,y); c.lineTo(x+k+CH,y+CH); c.moveTo(x+k+CH,y); c.lineTo(x+k,y+CH); c.stroke(); } c.restore();
+          c.fillStyle='#f6e2b0'; c.beginPath(); c.moveTo(cx,y+5+h/2-10); c.lineTo(cx+8*sx,y+5+h/2); c.lineTo(cx,y+5+h/2+10); c.lineTo(cx-8*sx,y+5+h/2); c.fill(); } }
+      c.globalAlpha=1; });
+    Kit.text(c,'Flips '+flips,16,524,15,'#f3f2ec'); Kit.text(c,'Pairs '+found+' / '+cards.length/2,240,524,15,'#f6e2b0','center'); Kit.text(c,Math.floor(g.t)+' s',464,524,15,'#f3f2ec','right');
+    if(peek>0){ Kit.text(c,'Memorise the cards...',240,270,22,'#fff3b0','center'); Kit.bar(c,170,284,140,10,peek/1.6,'#f5b524'); } }
 });
 })();
 </script>

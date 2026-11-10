@@ -13,6 +13,15 @@ assets/style.css               site styles
 assets/arcade.css              styles for the tabs, cards and shared play page
 ```
 
+## What the built-in games share
+
+Every game made for this site runs on `assets/kit.js`, which gives them all the same features:
+
+- A start screen with the rules, controls and, where it fits, difficulty or mode buttons
+- Pause with `P` or `Esc` (and automatically when you click away), mute with `M`
+- On-screen buttons on phones and tablets for games that need keys
+- Sound effects, best scores saved per mode on the player's device
+
 ## Put it online with GitHub Pages (free)
 
 1. Make an account at github.com.

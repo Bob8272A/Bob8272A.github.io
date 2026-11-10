@@ -9,30 +9,49 @@
 <script src="../../assets/kit.js"></script>
 <script>
 (function () {
-const N = 24, C = 20; let body, dir, next, food, acc, spd;
-function place(){ do { food = {x:Kit.irnd(N), y:Kit.irnd(N)}; } while (body.some(b=>b.x===food.x&&b.y===food.y)); }
-function turn(d){ const m={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]}[d]; if (m && !(m[0]===-dir[0] && m[1]===-dir[1])) next = m; }
-Kit.game({ id:'neon-serpent', title:'Neon Serpent', w:480, h:480, help:'Arrow keys, WASD or swipe to steer. Eat the dots and do not hit the walls or yourself.',
-  start(){ body=[{x:8,y:12},{x:7,y:12},{x:6,y:12}]; dir=[1,0]; next=dir; acc=0; spd=8; place(); },
+const N=24, C=20, OY=0, MODE={classic:[7,false],maze:[7,true],turbo:[11,false]};
+let body, dir, queue, food, bonus, bonusT, walls, acc, spd, eaten, level, grow, deadT, lerp;
+const hitWall=(x,y)=>walls.some((w)=>w[0]===x&&w[1]===y);
+function free(){ let q; do{ q={x:Kit.irnd(N),y:Kit.irnd(N)}; }while(body.some((b)=>b.x===q.x&&b.y===q.y)||hitWall(q.x,q.y)||(food&&food.x===q.x&&food.y===q.y)); return q; }
+function layout(lv){ walls=[]; const L=(lv-1)%5; const add=(x,y)=>{ if(!(Math.abs(x-8)<6&&y===12)) walls.push([x,y]); };
+  if(L===1){ for(let i=6;i<18;i++){ add(i,6); add(i,17); } }
+  if(L===2){ for(let i=4;i<20;i++){ if(i<10||i>13){ add(12,i); add(i,12); } } }
+  if(L===3){ for(let i=3;i<10;i++){ add(i,4); add(4,i); add(N-1-i,4); add(N-5,i); add(i,N-5); add(4,N-1-i); add(N-1-i,N-5); add(N-5,N-1-i); } }
+  if(L===4){ for(let i=0;i<N;i+=2){ if(i<9||i>14){ add(i,8); add(i,16); } } for(let i=10;i<15;i++){ add(6,i); add(17,i); } } }
+function turn(d){ const m={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]}[d]; if(!m||queue.length>2) return; const last=queue.length?queue[queue.length-1]:dir; if(m[0]===-last[0]&&m[1]===-last[1]) return; if(m[0]===last[0]&&m[1]===last[1]) return; queue.push(m); }
+Kit.game({ id:'neon-serpent', title:'Neon Serpent', w:480, h:480, pad:'dpad',
+  modes:[['classic','Classic'],['maze','Mazes'],['turbo','Turbo']],
+  help:'Eat apples to grow. Golden stars are worth extra but vanish quickly. In Mazes mode, every 8 apples moves you to a new layout of walls.',
+  keys:[['Steer','Arrows / W A S D / swipe'],['Pause','P or Esc']],
+  start(g){ body=[{x:8,y:12},{x:7,y:12},{x:6,y:12},{x:5,y:12}]; dir=[1,0]; queue=[]; acc=0; spd=MODE[g.mode][0]; eaten=0; level=1; grow=0; deadT=0; lerp=0; bonus=null; bonusT=0; food=null; layout(1); food=free(); },
   key(c){ turn({ArrowUp:'up',KeyW:'up',ArrowDown:'down',KeyS:'down',ArrowLeft:'left',KeyA:'left',ArrowRight:'right',KeyD:'right'}[c]); },
   swipe(d){ turn(d); },
-  update(dt,g){ acc += dt*spd; while (acc >= 1 && g.playing) { acc--; dir = next;
-      const h = {x:body[0].x+dir[0], y:body[0].y+dir[1]};
-      if (h.x<0||h.y<0||h.x>=N||h.y>=N||body.some(b=>b.x===h.x&&b.y===h.y)) { g.beep(110,.4,'sawtooth'); return g.over(); }
-      body.unshift(h);
-      if (h.x===food.x&&h.y===food.y) { g.score+=10; spd=Math.min(18,spd+.25); g.beep(880,.07); g.burst(food.x*C+C/2,food.y*C+C/2,'#ff8a7a',10); place(); } else body.pop(); } },
+  update(dt,g){ if(deadT>0){ deadT-=dt; if(body.length>1&&Math.random()<.5){ const b=body.pop(); g.burst(b.x*C+10,b.y*C+10,'#39c47c',4,90); } if(deadT<=0) g.over(); return; }
+    if(bonus){ bonusT-=dt; if(bonusT<=0) bonus=null; } else if(Math.random()<dt*.06){ bonus=free(); bonusT=6; }
+    acc+=dt*spd; lerp=Math.min(1,acc);
+    while(acc>=1&&g.playing&&deadT<=0){ acc--; if(queue.length) dir=queue.shift(); const h={x:body[0].x+dir[0],y:body[0].y+dir[1]};
+      if(h.x<0||h.y<0||h.x>=N||h.y>=N||hitWall(h.x,h.y)||body.slice(0,-1).some((b)=>b.x===h.x&&b.y===h.y)){ deadT=1; g.sfx('boom'); g.shake(12); g.burst(body[0].x*C+10,body[0].y*C+10,['#39c47c','#7df0b0','#f5b524'],24,220); return; }
+      body.unshift(h); if(grow>0) grow--; else body.pop();
+      if(h.x===food.x&&h.y===food.y){ g.score+=10*level; eaten++; grow+=1; spd=Math.min(MODE[g.mode][0]+9,spd+.22); g.sfx('good'); g.burst(h.x*C+10,h.y*C+10,'#ff8a7a',10); g.pop(h.x*C+10,h.y*C,'+'+10*level);
+        if(MODE[g.mode][1]&&eaten%8===0){ level++; layout(level); body=body.slice(0,4); g.sfx('level'); g.banner('Maze '+level,'Points x'+level); } food=free(); }
+      if(bonus&&h.x===bonus.x&&h.y===bonus.y){ const pts=Math.ceil(bonusT)*10*level; g.score+=pts; grow+=2; g.sfx('coin'); g.burst(h.x*C+10,h.y*C+10,'#f5c531',16,200); g.pop(h.x*C+10,h.y*C,'+'+pts,'#f5c531',18); bonus=null; } }
+    g.stats=[['Length',body.length],['Apples',eaten]]; },
   draw(c,g){ for(let i=0;i<N;i++)for(let j=0;j<N;j++){ c.fillStyle=(i+j)%2?'#12301f':'#0f2a1b'; c.fillRect(i*C,j*C,C,C); }
     c.strokeStyle='#3fb374'; c.lineWidth=4; c.strokeRect(2,2,476,476);
+    for(const [x,y] of walls){ c.fillStyle='#0b1a12'; c.fillRect(x*C,y*C+3,C,C); c.fillStyle=Kit.grad(c,0,y*C,0,y*C+C,'#4a6a58','#2c4638'); c.beginPath(); c.roundRect(x*C+1,y*C,C-2,C-3,4); c.fill(); c.fillStyle='rgba(255,255,255,.14)'; c.fillRect(x*C+3,y*C+2,C-6,2); }
     const fx=food.x*C+C/2, fy=food.y*C+C/2, pb=1+Math.sin(g.t*6)*.08; c.fillStyle='rgba(0,0,0,.3)'; c.beginPath(); c.ellipse(fx+2,fy+7,7,3,0,0,7); c.fill();
-    c.fillStyle=Kit.rgrad(c,fx-3,fy-3,10,'#ff8a7a','#d92b20'); c.beginPath(); c.arc(fx,fy+1,7.500*pb,0,7); c.fill(); c.strokeStyle='#5a3a1c'; c.lineWidth=2; c.beginPath(); c.moveTo(fx,fy-5); c.lineTo(fx+1,fy-10); c.stroke(); c.fillStyle='#49b06c'; c.beginPath(); c.ellipse(fx+5,fy-9,4,2,-.5,0,7); c.fill();
-    c.lineCap='round'; c.lineJoin='round'; const P=body.map(b=>[b.x*C+C/2,b.y*C+C/2]);
-    c.strokeStyle='rgba(0,0,0,.3)'; c.lineWidth=16; c.beginPath(); P.forEach((q,i)=>c[i?'lineTo':'moveTo'](q[0]+2,q[1]+3)); c.stroke();
-    c.shadowColor='#5dffa0'; c.shadowBlur=10; c.strokeStyle='#2fae6a'; c.lineWidth=16; c.beginPath(); P.forEach((q,i)=>c[i?'lineTo':'moveTo'](q[0],q[1])); c.stroke(); c.shadowBlur=0;
-    c.strokeStyle='#7df0b0'; c.lineWidth=7; c.beginPath(); P.forEach((q,i)=>c[i?'lineTo':'moveTo'](q[0],q[1])); c.stroke();
-    c.fillStyle='#1f8a50'; P.forEach((q,i)=>{ if(i&&i%2===0){ c.beginPath(); c.arc(q[0],q[1],2.500,0,7); c.fill(); } });
+    c.fillStyle=Kit.rgrad(c,fx-3,fy-3,10,'#ff8a7a','#d92b20'); c.beginPath(); c.arc(fx,fy+1,7.5*pb,0,7); c.fill(); c.strokeStyle='#5a3a1c'; c.lineWidth=2; c.beginPath(); c.moveTo(fx,fy-5); c.lineTo(fx+1,fy-10); c.stroke(); c.fillStyle='#49b06c'; c.beginPath(); c.ellipse(fx+5,fy-9,4,2,-.5,0,7); c.fill(); c.fillStyle='rgba(255,255,255,.6)'; c.beginPath(); c.arc(fx-3,fy-2,1.8,0,7); c.fill();
+    if(bonus){ const bx=bonus.x*C+10, by=bonus.y*C+10; c.fillStyle='rgba(245,197,49,.25)'; c.beginPath(); c.arc(bx,by,13+Math.sin(g.t*8)*2,0,7); c.fill(); Kit.star(c,bx,by,10,'#f5c531',g.t*2); c.strokeStyle='#f5c531'; c.lineWidth=2; c.beginPath(); c.arc(bx,by,14,-1.57,-1.57+bonusT/6*6.283); c.stroke(); }
+    const e=g.playing&&deadT<=0?lerp:1, P=body.map((b,i)=>{ const n=i===0?{x:b.x-dir[0],y:b.y-dir[1]}:body[i-1]; const pv=body[i+1]||b; const fxp=i===0?Kit.lerp(pv.x,b.x,e):Kit.lerp(pv.x,b.x,e), fyp=Kit.lerp(pv.y,b.y,e); return [fxp*C+C/2,fyp*C+C/2]; });
+    if(P.length>1){ c.lineCap='round'; c.lineJoin='round';
+      c.strokeStyle='rgba(0,0,0,.3)'; c.lineWidth=16; c.beginPath(); P.forEach((q,i)=>c[i?'lineTo':'moveTo'](q[0]+2,q[1]+3)); c.stroke();
+      c.shadowColor='#5dffa0'; c.shadowBlur=10; c.strokeStyle='#2fae6a'; c.lineWidth=16; c.beginPath(); P.forEach((q,i)=>c[i?'lineTo':'moveTo'](q[0],q[1])); c.stroke(); c.shadowBlur=0;
+      c.strokeStyle='#7df0b0'; c.lineWidth=7; c.beginPath(); P.forEach((q,i)=>c[i?'lineTo':'moveTo'](q[0],q[1])); c.stroke();
+      c.fillStyle='#1f8a50'; P.forEach((q,i)=>{ if(i&&i%2===0){ c.beginPath(); c.arc(q[0],q[1],2.5,0,7); c.fill(); } }); }
     const [hx,hy]=P[0], a=Math.atan2(dir[1],dir[0]); c.save(); c.translate(hx,hy); c.rotate(a);
     if(Math.sin(g.t*8)>0){ c.strokeStyle='#ff5a6a'; c.lineWidth=2; c.beginPath(); c.moveTo(9,0); c.lineTo(15,0); c.lineTo(18,-3); c.moveTo(15,0); c.lineTo(18,3); c.stroke(); }
-    c.fillStyle='#39c47c'; c.beginPath(); c.ellipse(1,0,11,9.500,0,0,7); c.fill(); c.fillStyle='#fff'; c.beginPath(); c.arc(3,-5,3.600,0,7); c.arc(3,5,3.600,0,7); c.fill(); c.fillStyle='#0b1a12'; c.beginPath(); c.arc(4.200,-5,1.800,0,7); c.arc(4.200,5,1.800,0,7); c.fill(); c.restore(); }
+    c.fillStyle='#39c47c'; c.beginPath(); c.ellipse(1,0,11,9.5,0,0,7); c.fill(); c.fillStyle='#fff'; c.beginPath(); c.arc(3,-5,3.6,0,7); c.arc(3,5,3.6,0,7); c.fill(); c.fillStyle='#0b1a12'; c.beginPath(); c.arc(4.2,-5,1.8,0,7); c.arc(4.2,5,1.8,0,7); c.fill(); c.restore();
+    if(MODE[g.mode][1]) Kit.text(c,'MAZE '+level+'  ·  '+(8-eaten%8)+' to go',240,22,13,'#a7f0c8','center'); }
 });
 })();
 </script>
