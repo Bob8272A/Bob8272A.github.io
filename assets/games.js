@@ -88,3 +88,6 @@ const GAMES = [
     art: '<g><circle cx="56" cy="30" r="11" fill="#f3f2ec"/><circle cx="82" cy="30" r="11" fill="#11171e"/><circle cx="108" cy="30" r="11" fill="#11171e"/><circle cx="56" cy="58" r="11" fill="#11171e"/><circle cx="82" cy="58" r="11" fill="#f3f2ec"/><circle cx="108" cy="58" r="11" fill="#f3f2ec"/></g>',
     how: 'Each move must trap at least one dark disc between the disc you place and another of yours. Small dots show legal moves. Corners can never be flipped back.', keys: [['Place a disc', 'Click a marked square']] },
 ];
+
+// Card pictures are gameplay screenshots in assets/thumbs/<slug>.jpg. The art field above is the fallback drawing.
+GAMES.forEach((g) => { if (!g.img) g.img = 'assets/thumbs/' + g.slug + '.jpg'; });

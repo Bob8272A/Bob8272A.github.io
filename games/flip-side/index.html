@@ -18,13 +18,17 @@ function count(){ return [bd.filter(v=>v===1).length, bd.filter(v=>v===2).length
 function play(m,w,g){ bd[m.i]=w; m.f.forEach(i=>bd[i]=w); g.beep(w===1?560:400,.06,'triangle'); }
 function next(g){ const other=3-turn; if(moves(bd,other).length) turn=other; else if(!moves(bd,turn).length){ const [p,a]=count(); g.score=p; if(p>a) g.win('You win '+p+' to '+a); else { g.noBest=true; g.over(p===a?'Draw':'Computer wins '+a+' to '+p); } return; }
   if(turn===2) think=.6; }
+function chip(c,x,y,v){ c.fillStyle='rgba(0,0,0,.4)'; c.beginPath(); c.ellipse(x+2,y+4,22,21,0,0,7); c.fill(); c.fillStyle=v===1?Kit.rgrad(c,x-7,y-8,28,'#ffffff','#e6e1d2','#b9b2a0'):Kit.rgrad(c,x-7,y-8,28,'#5a6470','#1c222b','#07090c'); c.beginPath(); c.arc(x,y,22,0,7); c.fill();
+  c.strokeStyle=v===1?'rgba(0,0,0,.12)':'rgba(255,255,255,.14)'; c.lineWidth=2; c.beginPath(); c.arc(x,y,15,0,7); c.stroke(); c.fillStyle='rgba(255,255,255,'+(v===1?.8:.25)+')'; c.beginPath(); c.ellipse(x-8,y-10,7,3.500,-.6,0,7); c.fill(); }
 Kit.game({ id:'flip-side', title:'Flip Side', w:480, h:520, unit:'Discs', help:'You play light discs. Place a disc so it traps dark discs in a line between two of yours, and they flip to your side. Most discs at the end wins.',
   start(){ bd=Array(64).fill(0); bd[27]=bd[36]=2; bd[28]=bd[35]=1; turn=1; think=0; },
   tap(x,y,g){ if(turn!==1) return; const cx=Math.floor((x-16)/C), cy=Math.floor((y-16)/C); if(cx<0||cy<0||cx>=N||cy>=N) return; const f=flips(bd,cx,cy,1); if(!f.length) return; play({i:cy*N+cx,f},1,g); next(g); },
   update(dt,g){ g.score=count()[0]; if(turn===2&&g.playing){ think-=dt; if(think<=0){ const ms=moves(bd,2); let best=ms[0], bv=-1e9; for(const m of ms){ const v=WT[m.i]*3+m.f.length+Math.random(); if(v>bv){ bv=v; best=m; } } play(best,2,g); next(g); } } },
-  draw(c){ c.fillStyle='#0f5a3a'; c.fillRect(16,16,448,448); c.strokeStyle='#0a3d27'; c.lineWidth=2; for(let i=0;i<=N;i++){ c.beginPath(); c.moveTo(16+i*C,16); c.lineTo(16+i*C,464); c.moveTo(16,16+i*C); c.lineTo(464,16+i*C); c.stroke(); }
-    const ok=turn===1?moves(bd,1).map(m=>m.i):[]; for(let i=0;i<64;i++){ const x=16+(i%N)*C+C/2, y=16+(i>>3)*C+C/2; if(bd[i]){ c.fillStyle=bd[i]===1?'#f3f2ec':'#11171e'; c.beginPath(); c.arc(x,y,22,0,7); c.fill(); } else if(ok.includes(i)){ c.fillStyle='rgba(243,242,236,.25)'; c.beginPath(); c.arc(x,y,7,0,7); c.fill(); } }
-    const [p,a]=count(); c.fillStyle='#a7b1b8'; c.font='700 16px monospace'; c.fillText('You '+p+'   Computer '+a+(turn===2?'   thinking...':''),18,500); }
+  draw(c,g){ c.fillStyle='#2a1c10'; c.fillRect(0,0,480,520); c.fillStyle=Kit.grad(c,0,0,480,480,'#7a5230','#4a2f18'); c.beginPath(); c.roundRect(4,4,472,472,12); c.fill();
+    c.fillStyle=Kit.rgrad(c,240,240,340,'#1f8a58','#0f5a3a'); c.fillRect(16,16,448,448); c.strokeStyle='rgba(0,0,0,.35)'; c.lineWidth=2; for(let i=0;i<=N;i++){ c.beginPath(); c.moveTo(16+i*C,16); c.lineTo(16+i*C,464); c.moveTo(16,16+i*C); c.lineTo(464,16+i*C); c.stroke(); }
+    c.fillStyle='rgba(0,0,0,.45)'; for(const [a,b] of [[2,2],[6,2],[2,6],[6,6]]){ c.beginPath(); c.arc(16+a*C,16+b*C,4,0,7); c.fill(); }
+    const ok=turn===1&&g.playing?moves(bd,1).map(m=>m.i):[]; for(let i=0;i<64;i++){ const x=16+(i%N)*C+C/2, y=16+(i>>3)*C+C/2; if(bd[i]) chip(c,x,y,bd[i]); else if(ok.includes(i)){ c.strokeStyle='rgba(255,255,255,.55)'; c.lineWidth=2; c.setLineDash([4,4]); c.beginPath(); c.arc(x,y,14+Math.sin(g.t*4)*1.500,0,7); c.stroke(); c.setLineDash([]); } }
+    const [p,a]=count(); c.fillStyle='#f3f2ec'; c.beginPath(); c.arc(30,499,10,0,7); c.fill(); c.fillStyle='#07090c'; c.beginPath(); c.arc(270,499,10,0,7); c.fill(); c.strokeStyle='#8a939a'; c.lineWidth=1.500; c.stroke(); c.fillStyle='#f3f2ec'; c.font='900 17px sans-serif'; c.fillText('You  '+p,48,505); c.fillText('Computer  '+a+(turn===2?'  ...':''),288,505); }
 });
 })();
 </script>

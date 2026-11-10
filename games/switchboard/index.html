@@ -16,8 +16,15 @@ Kit.game({ id:'switchboard', title:'Switchboard', w:480, h:520, unit:'Boards', h
   start(){ level=1; setup(); }, key(c){ if(c==='KeyR') setup(); },
   tap(x,y,g){ const cx=Math.floor((x-20)/C), cy=Math.floor((y-20)/C); if(cx<0||cy<0||cx>=N||cy>=N) return; flip(cx,cy); moves++; g.beep(on[cy*N+cx]?660:440,.05,'triangle');
     if(!on.some(v=>v)){ g.score++; level++; g.beep(990,.2); setup(); } },
-  draw(c){ for(let i=0;i<N*N;i++){ const x=20+(i%N)*C, y=20+Math.floor(i/N)*C; c.fillStyle=on[i]?'#f5b524':'#1b2430'; c.shadowColor='#f5b524'; c.shadowBlur=on[i]?18:0; c.beginPath(); c.roundRect(x+5,y+5,C-10,C-10,12); c.fill(); } c.shadowBlur=0;
-    c.fillStyle='#a7b1b8'; c.font='700 15px monospace'; c.fillText('Board '+level+'   Moves '+moves+'   R resets',22,498); }
+  draw(c,g){ c.fillStyle=Kit.grad(c,0,0,0,520,'#2a2f38','#171b21'); c.fillRect(0,0,480,520); c.fillStyle='#3a414c'; c.beginPath(); c.roundRect(10,10,460,460,16); c.fill(); c.fillStyle='#22272e'; c.beginPath(); c.roundRect(16,16,448,448,12); c.fill();
+    c.fillStyle='#8a939a'; for(const [x,y] of [[24,24],[456,24],[24,456],[456,456]]){ c.beginPath(); c.arc(x,y,4,0,7); c.fill(); }
+    for(let i=0;i<N*N;i++){ const x=20+(i%N)*C+C/2, y=20+Math.floor(i/N)*C+C/2, o=on[i];
+      c.fillStyle='#14171c'; c.beginPath(); c.arc(x,y,36,0,7); c.fill(); c.strokeStyle='#4a525e'; c.lineWidth=3; c.beginPath(); c.arc(x,y,36,0,7); c.stroke();
+      if(o){ c.fillStyle=Kit.rgrad(c,x,y,60,'rgba(255,214,102,.45)','rgba(255,214,102,0)'); c.beginPath(); c.arc(x,y,60,0,7); c.fill(); }
+      c.fillStyle=o?Kit.rgrad(c,x-8,y-10,34,'#fffbe0','#ffd23a','#e89a10'):Kit.rgrad(c,x-8,y-10,34,'#5a626e','#353b45','#22262d'); c.beginPath(); c.arc(x,y,28,0,7); c.fill();
+      c.strokeStyle=o?'#b06a08':'#6a7380'; c.lineWidth=2; c.beginPath(); c.moveTo(x-8,y+8); c.lineTo(x-4,y-6); c.lineTo(x,y+4); c.lineTo(x+4,y-6); c.lineTo(x+8,y+8); c.stroke();
+      c.fillStyle='rgba(255,255,255,'+(o?.7:.18)+')'; c.beginPath(); c.ellipse(x-10,y-13,8,4.500,-.6,0,7); c.fill(); }
+    c.fillStyle='#a7b1b8'; c.font='700 15px monospace'; c.fillText('Board '+level+'   Moves '+moves+'   R resets',22,500); }
 });
 })();
 </script>

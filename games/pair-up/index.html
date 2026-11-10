@@ -25,10 +25,17 @@ function shape(c,k,x,y){ c.fillStyle=c.strokeStyle=`hsl(${k*24},80%,60%)`; c.lin
 Kit.game({ id:'pair-up', title:'Pair Up', w:480, h:500, unit:'Flips', low:true, help:'Click two cards to flip them. Matching pairs stay face up. Find all 15 pairs in as few flips as you can.',
   start(){ cards=Kit.shuffle([...Array(30).keys()].map(i=>({k:i>>1,up:false,done:false}))); a=b=null; wait=0; found=0; },
   tap(x,y,g){ if(wait>0) return; const cx=Math.floor((x-6)/CW), cy=Math.floor((y-10)/CH); if(cx<0||cy<0||cx>=COLS||cy>=ROWS) return; const q=cards[cy*COLS+cx]; if(q.up||q.done) return;
-    q.up=true; g.score++; g.beep(520,.04,'triangle'); if(!a) a=q; else { b=q; if(a.k===b.k){ a.done=b.done=true; a=b=null; found++; g.beep(880,.1); if(found===15) g.win('All matched!'); } else wait=.8; } },
+    q.up=true; g.score++; g.beep(520,.04,'triangle'); if(!a) a=q; else { b=q; if(a.k===b.k){ a.done=b.done=true; a=b=null; found++; g.beep(880,.1); g.burst(6+cx*CW+CW/2,10+cy*CH+CH/2,'#f5d142',14); if(found===15) g.win('All matched!'); } else wait=.8; } },
   update(dt){ if(wait>0){ wait-=dt; if(wait<=0){ a.up=b.up=false; a=b=null; } } },
-  draw(c){ cards.forEach((q,i)=>{ const x=6+(i%COLS)*CW, y=10+Math.floor(i/COLS)*CH; c.fillStyle=q.up||q.done?'#151c24':'#00663f'; c.globalAlpha=q.done?.45:1; c.beginPath(); c.roundRect(x+4,y+4,CW-8,CH-8,9); c.fill();
-      if(q.up||q.done) shape(c,q.k,x+CW/2,y+CH/2); else { c.strokeStyle='rgba(243,242,236,.5)'; c.lineWidth=2; c.strokeRect(x+12,y+12,CW-24,CH-24); } c.globalAlpha=1; }); }
+  draw(c,g){ c.fillStyle=Kit.rgrad(c,240,250,360,'#1f6b46','#0f3a26'); c.fillRect(0,0,480,500);
+    cards.forEach((q,i)=>{ const x=6+(i%COLS)*CW, y=10+Math.floor(i/COLS)*CH, up=q.up||q.done; c.globalAlpha=q.done?.55:1;
+      c.fillStyle='rgba(0,0,0,.35)'; c.beginPath(); c.roundRect(x+6,y+8,CW-8,CH-8,9); c.fill();
+      if(up){ c.fillStyle=Kit.grad(c,x,y,x,y+CH,'#fffdf5','#ece4d0'); c.beginPath(); c.roundRect(x+4,y+4,CW-8,CH-8,9); c.fill(); c.strokeStyle='#d8ccb0'; c.lineWidth=1.500; c.beginPath(); c.roundRect(x+8,y+8,CW-16,CH-16,6); c.stroke(); shape(c,q.k,x+CW/2,y+CH/2);
+        if(q.done){ c.fillStyle='#2f8f52'; c.beginPath(); c.arc(x+CW-16,y+16,7,0,7); c.fill(); c.strokeStyle='#fff'; c.lineWidth=2; c.beginPath(); c.moveTo(x+CW-20,y+16); c.lineTo(x+CW-17,y+19); c.lineTo(x+CW-12,y+13); c.stroke(); } }
+      else { c.fillStyle=Kit.grad(c,x,y,x+CW,y+CH,'#c9463c','#8f2a24'); c.beginPath(); c.roundRect(x+4,y+4,CW-8,CH-8,9); c.fill(); c.strokeStyle='#f6e2b0'; c.lineWidth=2; c.beginPath(); c.roundRect(x+9,y+9,CW-18,CH-18,6); c.stroke();
+        c.save(); c.beginPath(); c.roundRect(x+11,y+11,CW-22,CH-22,5); c.clip(); c.strokeStyle='rgba(246,226,176,.35)'; c.lineWidth=1; for(let k=-CH;k<CW;k+=9){ c.beginPath(); c.moveTo(x+k,y); c.lineTo(x+k+CH,y+CH); c.moveTo(x+k+CH,y); c.lineTo(x+k,y+CH); c.stroke(); } c.restore();
+        c.fillStyle='#f6e2b0'; c.beginPath(); c.moveTo(x+CW/2,y+CH/2-10); c.lineTo(x+CW/2+8,y+CH/2); c.lineTo(x+CW/2,y+CH/2+10); c.lineTo(x+CW/2-8,y+CH/2); c.fill(); }
+      c.globalAlpha=1; }); }
 });
 })();
 </script>

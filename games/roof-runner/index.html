@@ -12,6 +12,14 @@
 let y, vy, onG, roofs, speed, jumps, dist;
 const X=110, GH=24;
 function jump(g){ if(jumps<2){ vy=-520; jumps++; onG=false; g.beep(jumps===1?440:620,.06,'triangle'); } }
+function runner(c,x,y,t,air){ const s=air?1.1:Math.sin(t), k=air?-.9:Math.cos(t); c.save(); c.translate(x,y);
+  c.strokeStyle='#1c2430'; c.lineWidth=5; c.lineCap='round';
+  c.beginPath(); c.moveTo(-1,12); c.lineTo(-1+s*9,21-Math.max(0,s)*3); c.stroke(); c.beginPath(); c.moveTo(1,12); c.lineTo(1-s*9,21-Math.max(0,-s)*3); c.stroke();
+  c.fillStyle='#e2362c'; c.fillRect(-1+s*9-3,20-Math.max(0,s)*3,7,4); c.fillRect(1-s*9-3,20-Math.max(0,-s)*3,7,4);
+  c.fillStyle='#2f6fd0'; c.beginPath(); c.roundRect(-7,-4,14,18,5); c.fill(); c.fillStyle='#244f96'; c.fillRect(-7,8,14,3);
+  c.strokeStyle='#2f6fd0'; c.lineWidth=4; c.beginPath(); c.moveTo(0,0); c.lineTo(k*8,7); c.stroke(); c.fillStyle='#f2c9a0'; c.beginPath(); c.arc(k*8,8,2.500,0,7); c.fill();
+  c.fillStyle='#f2c9a0'; c.beginPath(); c.arc(1,-11,7.500,0,7); c.fill(); c.fillStyle='#3a2414'; c.beginPath(); c.arc(0,-13,7.500,3.300,6.300); c.fill(); c.fillRect(-7,-15,5,6);
+  c.fillStyle='#1b1208'; c.fillRect(4,-12,2,3); c.strokeStyle='#f5b524'; c.lineWidth=4; c.beginPath(); c.moveTo(-5,-5); c.quadraticCurveTo(-16,-6+Math.sin(t*1.3)*3,-24,-2+Math.sin(t*1.7)*5); c.stroke(); c.fillStyle='#f5b524'; c.fillRect(-6,-7,13,4); c.restore(); }
 Kit.game({ id:'roof-runner', title:'Roof Runner', w:720, h:400, unit:'Metres', help:'Space, Up or tap to jump. Tap again in the air for a double jump. Do not fall between the rooftops.',
   start(){ y=250; vy=0; onG=true; jumps=0; speed=300; dist=0; roofs=[{x:0,w:700,y:280}]; },
   tap(x,yy,g){ jump(g); }, key(c,g){ if(c==='Space'||c==='ArrowUp'||c==='KeyW') jump(g); },
@@ -20,12 +28,19 @@ Kit.game({ id:'roof-runner', title:'Roof Runner', w:720, h:400, unit:'Metres', h
     let l=roofs[roofs.length-1]; while(l.x+l.w<760){ const gap=Kit.rnd(70,90+speed*.22); const n={x:l.x+l.w+gap,w:Kit.rnd(180,420),y:Kit.clamp(l.y+Kit.rnd(-70,70),170,340)}; roofs.push(n); l=n; }
     const py=y; vy+=1500*dt; y+=vy*dt; onG=false;
     for(const r of roofs){ if(X+12>r.x&&X-12<r.x+r.w){ if(py<=r.y-GH+1&&y>=r.y-GH&&vy>=0){ y=r.y-GH; vy=0; onG=true; jumps=0; } else if(y>r.y-GH+4&&X+12>r.x&&X-12<r.x+6){ } } }
-    if(y>430){ g.beep(110,.4,'sawtooth'); g.over(); } },
-  draw(c,g){ const gr=c.createLinearGradient(0,0,0,400); gr.addColorStop(0,'#1a1033'); gr.addColorStop(1,'#f08a52'); c.fillStyle=gr; c.fillRect(0,0,720,400);
-    c.fillStyle='rgba(11,15,20,.45)'; for(let i=0;i<9;i++){ const x=((i*110-dist*.2)%990+990)%990-110; c.fillRect(x,200+((i*53)%90),70,300); }
-    for(const r of roofs){ c.fillStyle='#0b0f14'; c.fillRect(r.x,r.y,r.w,400); c.fillStyle='#f5b524'; c.fillRect(r.x,r.y,r.w,4);
-      c.fillStyle='#232e3a'; for(let wx=r.x+14;wx<r.x+r.w-18;wx+=28) for(let wy=r.y+18;wy<400;wy+=30) c.fillRect(wx,wy,12,14); }
-    c.fillStyle='#f3f2ec'; const b=onG?Math.sin(dist/14)*3:0; c.fillRect(X-10,y+b,20,GH-b); c.fillStyle='#e2362c'; c.fillRect(X-10,y+b,20,6); }
+    if(y>430){ g.beep(110,.4,'sawtooth'); g.shake(8); g.over('You fell'); } },
+  draw(c,g){ c.fillStyle=Kit.grad(c,0,0,0,400,'#140c2e','#3b1d54','#c2553f','#f6a35c'); c.fillRect(0,0,720,400);
+    Kit.stars(c,720,170,0,36); c.fillStyle='#fde9c0'; c.beginPath(); c.arc(590,78,30,0,7); c.fill(); c.fillStyle='rgba(253,233,192,.14)'; c.beginPath(); c.arc(590,78,52,0,7); c.fill();
+    for(let L=0;L<2;L++){ const sp=L?.35:.15, n=9; c.fillStyle=L?'rgba(22,14,40,.78)':'rgba(60,30,80,.55)'; for(let i=0;i<n;i++){ const w=L?92:120, x=((i*(L?128:170)-dist*sp)%1152+1152)%1152-160, h=(L?130:190)+((i*67+L*31)%90); c.fillRect(x,400-h,w,h);
+        if(L){ c.fillStyle='rgba(255,214,130,.55)'; for(let wy=400-h+12;wy<400;wy+=22) for(let wx=x+10;wx<x+w-10;wx+=18) if((wx*7+wy*3+i)%5<2) c.fillRect(wx,wy,7,9); c.fillStyle='rgba(22,14,40,.78)'; } } }
+    for(const r of roofs){ c.fillStyle='#10151c'; c.fillRect(r.x,r.y,r.w,400); c.fillStyle='#1a222c'; c.fillRect(r.x,r.y,r.w,10); c.fillStyle='#f5b524'; c.fillRect(r.x,r.y,r.w,3);
+      c.fillStyle='#0b0f14'; c.fillRect(r.x-3,r.y+10,r.w+6,5);
+      for(let wx=r.x+14;wx<r.x+r.w-22;wx+=30) for(let wy=r.y+28;wy<400;wy+=32){ const lit=((Math.floor(wx-r.x)*13+Math.floor(wy)*7+Math.floor(r.w))%7)<3; c.fillStyle=lit?'#ffd27a':'#232e3a'; c.fillRect(wx,wy,14,16); if(lit){ c.fillStyle='rgba(0,0,0,.25)'; c.fillRect(wx+6,wy,2,16); } }
+      const k=Math.floor(r.w)%3; if(r.w>230){ const ax=r.x+r.w*.7;
+        if(k===0){ c.fillStyle='#39434e'; c.fillRect(ax,r.y-46,3,46); c.fillRect(ax-8,r.y-36,19,2); c.fillStyle='#e2362c'; c.beginPath(); c.arc(ax+1.500,r.y-48,3+Math.sin(g.t*6)*1,0,7); c.fill(); }
+        else if(k===1){ c.fillStyle='#4a3a2c'; c.fillRect(ax-2,r.y-12,3,12); c.fillRect(ax+22,r.y-12,3,12); c.fillStyle='#6b523b'; c.beginPath(); c.roundRect(ax-8,r.y-40,38,30,4); c.fill(); c.fillStyle='#57422f'; c.fillRect(ax-8,r.y-30,38,3); c.fillStyle='#6b523b'; c.beginPath(); c.moveTo(ax-10,r.y-40); c.lineTo(ax+11,r.y-52); c.lineTo(ax+32,r.y-40); c.fill(); }
+        else { c.fillStyle='#7d858c'; c.fillRect(ax,r.y-18,34,18); c.fillStyle='#565e66'; for(let i=0;i<5;i++) c.fillRect(ax+3+i*6,r.y-15,3,12); } } }
+    runner(c,X,y+2,dist/11,!onG); }
 });
 })();
 </script>

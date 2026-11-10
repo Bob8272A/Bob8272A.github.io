@@ -14,6 +14,7 @@ const PW=84, cols=10, bw=46, bh=18;
 function build(){ bricks=[]; const rows=Math.min(9,4+level); for(let r=0;r<rows;r++)for(let c=0;c<cols;c++) bricks.push({x:10+c*bw,y:60+r*(bh+4),hp:r<2&&level>1?2:1,hue:r*38}); }
 function serve(){ ball={x:px,y:560,vx:0,vy:0,stuck:true}; }
 function launch(g){ if(ball.stuck){ ball.stuck=false; const s=300+level*25; ball.vx=s*.5*(Math.random()<.5?-1:1); ball.vy=-s; } }
+let trail=[];
 Kit.game({ id:'brick-blitz', title:'Brick Blitz', w:480, h:640, help:'Move with the mouse or arrow keys. Space or click launches the ball. Clear every brick.',
   start(){ px=240; lives=3; level=1; build(); serve(); },
   tap(x,y,g){ launch(g); }, key(c,g){ if(c==='Space') launch(g); },
@@ -24,13 +25,22 @@ Kit.game({ id:'brick-blitz', title:'Brick Blitz', w:480, h:640, help:'Move with 
       if(ball.x<7){ball.x=7;ball.vx=Math.abs(ball.vx);} if(ball.x>473){ball.x=473;ball.vx=-Math.abs(ball.vx);}
       if(ball.y<7){ball.y=7;ball.vy=Math.abs(ball.vy);}
       if(ball.vy>0&&ball.y>572&&ball.y<590&&Math.abs(ball.x-px)<PW/2+7){ const s=Math.hypot(ball.vx,ball.vy), a=(ball.x-px)/(PW/2)*1.1; ball.vx=s*Math.sin(a); ball.vy=-s*Math.cos(a); ball.y=572; g.beep(330,.05); }
-      for(const b of bricks){ if(b.hp>0&&ball.x>b.x-7&&ball.x<b.x+bw+3&&ball.y>b.y-7&&ball.y<b.y+bh+7){ b.hp--; g.score+=10; g.beep(520+b.hue,.05);
+      for(const b of bricks){ if(b.hp>0&&ball.x>b.x-7&&ball.x<b.x+bw+3&&ball.y>b.y-7&&ball.y<b.y+bh+7){ b.hp--; g.score+=10; g.beep(520+b.hue,.05); g.burst(b.x+bw/2,b.y+bh/2,`hsl(${b.hue},78%,62%)`,b.hp?4:10);
           const ox=Math.min(ball.x-(b.x-7),b.x+bw+3-ball.x), oy=Math.min(ball.y-(b.y-7),b.y+bh+7-ball.y); if(ox<oy) ball.vx*=-1; else ball.vy*=-1; break; } } }
-    if(ball.y>650){ lives--; g.beep(140,.3,'sawtooth'); if(lives<=0) return g.over(); serve(); }
+    if(ball.y>650){ lives--; g.beep(140,.3,'sawtooth'); g.shake(8); if(lives<=0) return g.over(); serve(); }
     if(bricks.every(b=>b.hp<=0)){ level++; g.score+=100; build(); serve(); } },
-  draw(c,g){ for(const b of bricks) if(b.hp>0){ c.fillStyle=`hsl(${b.hue},75%,${b.hp>1?38:58}%)`; c.fillRect(b.x,b.y,bw-4,bh); }
-    c.fillStyle='#f3f2ec'; c.fillRect(px-PW/2,580,PW,10); c.fillStyle='#f5b524'; c.beginPath(); c.arc(ball.x,ball.y,7,0,7); c.fill();
-    c.fillStyle='#a7b1b8'; c.font='700 14px monospace'; c.fillText('Lives '+lives+'   Level '+level,10,26); }
+  draw(c,g){ c.fillStyle=Kit.grad(c,0,0,0,640,'#141033','#0b0f14'); c.fillRect(0,0,480,640); Kit.stars(c,480,640,g.t*.2,40);
+    c.strokeStyle='rgba(120,110,220,.08)'; c.lineWidth=1; for(let x=0;x<480;x+=40){ c.beginPath(); c.moveTo(x,0); c.lineTo(x,640); c.stroke(); } for(let y=0;y<640;y+=40){ c.beginPath(); c.moveTo(0,y); c.lineTo(480,y); c.stroke(); }
+    for(const b of bricks) if(b.hp>0){ const w=bw-4, L=b.hp>1?42:58; c.fillStyle='rgba(0,0,0,.35)'; c.fillRect(b.x+2,b.y+3,w,bh);
+      c.fillStyle=Kit.grad(c,0,b.y,0,b.y+bh,`hsl(${b.hue},78%,${L+10}%)`,`hsl(${b.hue},75%,${L-10}%)`); c.beginPath(); c.roundRect(b.x,b.y,w,bh,3); c.fill();
+      c.fillStyle='rgba(255,255,255,.35)'; c.fillRect(b.x+2,b.y+1.500,w-4,2.500); c.fillStyle='rgba(0,0,0,.25)'; c.fillRect(b.x+2,b.y+bh-3,w-4,2);
+      if(b.hp>1){ c.strokeStyle='rgba(255,255,255,.7)'; c.lineWidth=1.500; c.strokeRect(b.x+4,b.y+5,w-8,bh-10); } }
+    if(!ball.stuck){ trail.push([ball.x,ball.y]); if(trail.length>10) trail.shift(); } else trail=[];
+    trail.forEach((q,i)=>{ c.fillStyle=`rgba(245,181,36,${i/30})`; c.beginPath(); c.arc(q[0],q[1],2+i*.45,0,7); c.fill(); });
+    c.shadowColor='#f5b524'; c.shadowBlur=14; c.fillStyle=Kit.rgrad(c,ball.x-2,ball.y-2,8,'#fff6cf','#f5b524'); c.beginPath(); c.arc(ball.x,ball.y,7,0,7); c.fill(); c.shadowBlur=0;
+    c.fillStyle='rgba(0,0,0,.4)'; c.beginPath(); c.roundRect(px-PW/2+3,584,PW,11,6); c.fill();
+    c.fillStyle=Kit.grad(c,0,579,0,591,'#ffffff','#9fb0c0'); c.beginPath(); c.roundRect(px-PW/2,579,PW,12,6); c.fill(); c.fillStyle='#e2362c'; c.beginPath(); c.roundRect(px-PW/2,579,14,12,6); c.fill(); c.beginPath(); c.roundRect(px+PW/2-14,579,14,12,6); c.fill(); c.fillStyle='#4fc3f7'; c.fillRect(px-10,582,20,3);
+    for(let i=0;i<lives;i++){ c.fillStyle='#f5b524'; c.beginPath(); c.arc(18+i*18,24,6,0,7); c.fill(); } c.fillStyle='#a7b1b8'; c.font='700 14px monospace'; c.textAlign='right'; c.fillText('Level '+level,468,29); c.textAlign='left'; }
 });
 })();
 </script>

@@ -13,15 +13,23 @@ let stack, cur, dir, cam;
 const BH=28;
 function drop(g){ const top=stack[stack.length-1]; const l=Math.max(cur.x,top.x), r=Math.min(cur.x+cur.w,top.x+top.w);
   if(r-l<=2){ g.beep(110,.4,'sawtooth'); return g.over(); }
-  const perfect=Math.abs(cur.x-top.x)<5; const nb=perfect?{x:top.x,w:top.w}:{x:l,w:r-l}; stack.push(nb); g.score++; g.beep(perfect?990:440+g.score*12,.08,'triangle');
+  const perfect=Math.abs(cur.x-top.x)<5; const nb=perfect?{x:top.x,w:top.w}:{x:l,w:r-l}; stack.push(nb); g.score++; if(perfect) g.burst(nb.x+nb.w/2,600-stack.length*BH+cam+BH,'#fff3b0',16,180); else g.shake(3); g.beep(perfect?990:440+g.score*12,.08,'triangle');
   cur={x:dir>0?-nb.w:480,w:nb.w}; dir=-dir; }
+function floor(c,x,y,w,i){ const hue=(i*14+200)%360; c.fillStyle='rgba(0,0,0,.3)'; c.fillRect(x+4,y+4,w,BH-2);
+  c.fillStyle=Kit.grad(c,x,0,x+w,0,`hsl(${hue},45%,62%)`,`hsl(${hue},45%,48%)`); c.fillRect(x,y,w,BH-2); c.fillStyle=`hsl(${hue},40%,36%)`; c.fillRect(x,y+BH-6,w,4); c.fillStyle='rgba(255,255,255,.25)'; c.fillRect(x,y,w,2);
+  for(let wx=x+7;wx<x+w-12;wx+=17){ const lit=(Math.floor(wx-x)*7+i*13)%5<3; c.fillStyle=lit?'#ffe9a8':'#22344d'; c.fillRect(wx,y+6,10,13); c.fillStyle='rgba(0,0,0,.2)'; c.fillRect(wx+4.500,y+6,1,13); } }
 Kit.game({ id:'sky-stack', title:'Sky Stack', w:480, h:640, unit:'Floors', help:'Tap, click or press Space to drop each block. Line them up or the overhang is cut off.',
   start(){ stack=[{x:140,w:200}]; cur={x:-200,w:200}; dir=1; cam=0; }, tap(x,y,g){ drop(g); }, key(c,g){ if(c==='Space') drop(g); },
   update(dt,g){ const s=170+g.score*7; cur.x+=dir*s*dt; if(cur.x>480-cur.w/2){ dir=-1; } if(cur.x<-cur.w/2){ dir=1; }
     cam+=(Math.max(0,(stack.length-8)*BH)-cam)*dt*6; },
-  draw(c,g){ const gr=c.createLinearGradient(0,0,0,640); gr.addColorStop(0,'#0c1830'); gr.addColorStop(1,'#182437'); c.fillStyle=gr; c.fillRect(0,0,480,640);
-    stack.forEach((b,i)=>{ c.fillStyle=`hsl(${(i*14+200)%360},65%,55%)`; c.fillRect(b.x,600-(i+1)*BH+cam,b.w,BH-2); });
-    c.fillStyle='#f3f2ec'; c.fillRect(cur.x,600-(stack.length+1)*BH+cam,cur.w,BH-2); c.fillStyle='#26313c'; c.fillRect(0,600+cam,480,60); }
+  draw(c,g){ const h=stack.length; c.fillStyle=Kit.grad(c,0,0,0,640,h>24?'#0a0f2c':'#3f7fc4',h>24?'#2a3a7c':'#9fd0ee','#f6dfb8'); c.fillRect(0,0,480,640);
+    if(h>24) Kit.stars(c,480,400,0,50); for(let i=0;i<6;i++) Kit.cloud(c,(i*97+g.t*(6+i*2))%600-80,((i*150+cam*.5)%760)-60,1+(i%2)*.4,'rgba(255,255,255,.75)');
+    c.fillStyle='rgba(40,60,90,.35)'; for(let i=0;i<8;i++) c.fillRect(i*64-10,560-(i*53)%110+cam*.3,58,400);
+    c.fillStyle='#4a5a48'; c.fillRect(0,600+cam,480,80); c.fillStyle='#39434e'; c.fillRect(0,600+cam,480,6);
+    stack.forEach((b,i)=>floor(c,b.x,600-(i+1)*BH+cam,b.w,i));
+    const cy=600-(stack.length+1)*BH+cam; c.strokeStyle='#39434e'; c.lineWidth=3; c.beginPath(); c.moveTo(cur.x+cur.w/2,0); c.lineTo(cur.x+cur.w/2,cy-12); c.stroke(); c.fillStyle='#f5b524'; c.fillRect(0,0,480,8); c.fillStyle='#1b1404'; for(let x=(g.t*30)%24-24;x<480;x+=24){ c.beginPath(); c.moveTo(x,8); c.lineTo(x+8,0); c.lineTo(x+16,0); c.lineTo(x+8,8); c.fill(); }
+    c.strokeStyle='#39434e'; c.lineWidth=2; c.beginPath(); c.moveTo(cur.x+cur.w/2,cy-12); c.lineTo(cur.x+6,cy); c.moveTo(cur.x+cur.w/2,cy-12); c.lineTo(cur.x+cur.w-6,cy); c.stroke();
+    floor(c,cur.x,cy,cur.w,stack.length); }
 });
 })();
 </script>

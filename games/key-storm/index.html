@@ -14,12 +14,23 @@ let words, target, typed, timer, lives;
 Kit.game({ id:'key-storm', title:'Key Storm', w:640, h:480, typing:true, help:'Type the falling words before they reach the bottom. Start typing a word to lock on to it. Three misses ends the game.',
   start(){ words=[]; target=null; typed=0; timer=.5; lives=3; },
   key(code,g,ch){ if(!ch||ch.length!==1) return; ch=ch.toLowerCase(); if(!target){ target=words.filter(w=>w.t[0]===ch).sort((a,b)=>b.y-a.y)[0]||null; typed=0; }
-    if(target&&target.t[typed]===ch){ typed++; g.beep(600+typed*30,.03); if(typed===target.t.length){ g.score+=target.t.length*10; target.dead=true; target=null; g.beep(990,.08); } } else g.beep(160,.05,'sawtooth'); },
+    if(target&&target.t[typed]===ch){ typed++; g.beep(600+typed*30,.03); if(typed===target.t.length){ g.score+=target.t.length*10; g.burst(target.x+30,target.y,'#7ab8f5',14); target.dead=true; target=null; g.beep(990,.08); } } else g.beep(160,.05,'sawtooth'); },
   update(dt,g){ timer-=dt; if(timer<=0){ timer=Math.max(.7,2-g.t/60); let t; do{ t=Kit.pick(WORDS); }while(words.some(w=>w.t[0]===t[0])&&words.length<12); words.push({t,x:Kit.rnd(30,520),y:-10,v:Kit.rnd(28,44)+g.t*.5}); }
-    for(const w of words){ w.y+=w.v*dt; if(w.y>470){ w.dead=true; lives--; if(target===w) target=null; g.beep(110,.3,'sawtooth'); } }
+    for(const w of words){ w.y+=w.v*dt; if(w.y>470){ w.dead=true; lives--; g.shake(8); if(target===w) target=null; g.beep(110,.3,'sawtooth'); } }
     words=words.filter(w=>!w.dead); if(lives<=0) g.over(); },
-  draw(c){ c.font='700 22px monospace'; for(const w of words){ const on=w===target; c.fillStyle=on?'#f5b524':'#f3f2ec'; c.fillText(w.t,w.x,w.y); if(on){ c.fillStyle='#3fb374'; c.fillText(w.t.slice(0,typed),w.x,w.y); } }
-    c.fillStyle='#e2362c'; for(let i=0;i<lives;i++) c.fillRect(14+i*22,14,16,8); c.fillStyle='#7a1f1a'; c.fillRect(0,474,640,6); }
+  draw(c,g){ c.fillStyle=Kit.grad(c,0,0,0,480,'#141a2c','#263248','#3a4a5c'); c.fillRect(0,0,640,480);
+    const fl=Math.sin(g.t*1.7)>.985; if(fl){ c.fillStyle='rgba(255,255,255,.12)'; c.fillRect(0,0,640,480); c.strokeStyle='#fff8c0'; c.lineWidth=3; c.beginPath(); c.moveTo(430,40); c.lineTo(410,120); c.lineTo(440,120); c.lineTo(405,220); c.stroke(); }
+    for(let i=0;i<7;i++) Kit.cloud(c,i*100-30+Math.sin(g.t*.3+i)*10,26+(i%2)*14,2,i%2?'#2a3446':'#354156');
+    c.strokeStyle='rgba(160,200,255,.3)'; c.lineWidth=1; for(let i=0;i<70;i++){ const x=(i*97+g.t*60)%660-10, y=(i*53+g.t*520)%480; c.beginPath(); c.moveTo(x,y); c.lineTo(x-3,y+12); c.stroke(); }
+    c.fillStyle='#0f141d'; for(let i=0;i<14;i++){ const h=30+(i*37)%50; c.fillRect(i*48-4,474-h,44,h); c.fillStyle='rgba(255,214,130,.6)'; for(let wy=474-h+6;wy<468;wy+=10) for(let wx=i*48+2;wx<i*48+34;wx+=9) if((wx+wy+i)%4<2) c.fillRect(wx,wy,4,5); c.fillStyle='#0f141d'; }
+    c.font='700 21px monospace'; c.textBaseline='middle';
+    for(const w of words){ const on=w===target, tw=c.measureText(w.t).width;
+      c.fillStyle='rgba(0,0,0,.3)'; c.beginPath(); c.roundRect(w.x-10,w.y-12,tw+24,32,16); c.fill();
+      c.fillStyle=on?'#fff3c4':'#e8f1ff'; c.beginPath(); c.roundRect(w.x-12,w.y-16,tw+24,32,16); c.fill(); if(on){ c.strokeStyle='#f5b524'; c.lineWidth=3; c.beginPath(); c.roundRect(w.x-12,w.y-16,tw+24,32,16); c.stroke(); }
+      c.fillStyle='#7ab8f5'; c.beginPath(); c.moveTo(w.x+tw/2-5,w.y+16); c.lineTo(w.x+tw/2,w.y+25); c.lineTo(w.x+tw/2+5,w.y+16); c.fill();
+      c.fillStyle='#1a2436'; c.fillText(w.t,w.x,w.y+1); if(on){ c.fillStyle='#1f9a55'; c.fillText(w.t.slice(0,typed),w.x,w.y+1); } }
+    c.textBaseline='alphabetic'; for(let i=0;i<3;i++){ c.fillStyle=i<lives?'#e2362c':'rgba(255,255,255,.15)'; const x=22+i*26, y=20; c.beginPath(); c.moveTo(x,y+8); c.bezierCurveTo(x-14,y-2,x-5,y-11,x,y-4); c.bezierCurveTo(x+5,y-11,x+14,y-2,x,y+8); c.fill(); }
+    c.fillStyle='#e2362c'; c.fillRect(0,474,640,6); }
 });
 })();
 </script>

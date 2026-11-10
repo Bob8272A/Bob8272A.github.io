@@ -11,6 +11,9 @@
 (function () {
 let py, ay, b, me, ai; const PH=80;
 function serve(d){ b={x:320,y:200,vx:260*d,vy:Kit.rnd(-160,160)}; }
+let tr=[];
+function bat(c,x,y,col,flip){ c.fillStyle='rgba(0,0,0,.35)'; c.beginPath(); c.roundRect(x-5,y-PH/2+5,16,PH,8); c.fill(); c.fillStyle='#b5834f'; c.beginPath(); c.roundRect(x-3,y+PH/2-6,6,22,3); c.fill();
+  c.fillStyle=col; c.beginPath(); c.roundRect(x-8,y-PH/2,16,PH,8); c.fill(); c.fillStyle='rgba(255,255,255,.3)'; c.beginPath(); c.roundRect(x+(flip?2:-6),y-PH/2+5,4,PH-10,2); c.fill(); }
 Kit.game({ id:'paddle-duel', title:'Paddle Duel', w:640, h:400, unit:'Points', help:'Move your paddle with the mouse, W/S or the arrow keys. First to 7 wins.',
   start(){ py=ay=200; me=ai=0; serve(1); },
   update(dt,g){ if(g.up) py-=380*dt; else if(g.dn) py+=380*dt; else if(g.ptr.last!==g.ptr.y){ py=g.ptr.y; g.ptr.last=g.ptr.y; }
@@ -20,12 +23,15 @@ Kit.game({ id:'paddle-duel', title:'Paddle Duel', w:640, h:400, unit:'Points', h
     if(b.y<8){b.y=8;b.vy=Math.abs(b.vy);} if(b.y>392){b.y=392;b.vy=-Math.abs(b.vy);}
     if(b.vx<0&&b.x<34&&b.x>18&&Math.abs(b.y-py)<PH/2+8){ b.vx=Math.abs(b.vx)*1.06; b.vy+=(b.y-py)*5; g.beep(440,.05); }
     if(b.vx>0&&b.x>606&&b.x<622&&Math.abs(b.y-ay)<PH/2+8){ b.vx=-Math.abs(b.vx)*1.06; b.vy+=(b.y-ay)*5; g.beep(330,.05); }
-    if(b.x<-20){ ai++; g.beep(150,.3,'sawtooth'); serve(1); } if(b.x>660){ me++; g.beep(880,.15); serve(-1); }
+    if(b.x<-20){ ai++; g.beep(150,.3,'sawtooth'); serve(1); } if(b.x>660){ me++; g.beep(880,.15); g.burst(630,b.y,'#f5b524',14); serve(-1); }
     g.score=me; if(me>=7) g.win('You win!'); else if(ai>=7) g.over('You lose'); },
-  draw(c){ c.strokeStyle='#26313c'; c.setLineDash([8,10]); c.beginPath(); c.moveTo(320,0); c.lineTo(320,400); c.stroke(); c.setLineDash([]);
-    c.fillStyle='#f5b524'; c.fillRect(20,py-PH/2,12,PH); c.fillStyle='#4fc3f7'; c.fillRect(608,ay-PH/2,12,PH);
-    c.fillStyle='#f3f2ec'; c.beginPath(); c.arc(b.x,b.y,8,0,7); c.fill();
-    c.font='900 44px sans-serif'; c.textAlign='center'; c.fillStyle='#3a4755'; c.fillText(me,260,60); c.fillText(ai,380,60); c.textAlign='left'; }
+  draw(c,g){ c.fillStyle='#0b1a14'; c.fillRect(0,0,640,400); c.fillStyle=Kit.grad(c,0,0,640,400,'#1c7a52','#115c3c'); c.beginPath(); c.roundRect(10,10,620,380,10); c.fill();
+    c.strokeStyle='#f3f2ec'; c.lineWidth=4; c.strokeRect(14,14,612,372); c.lineWidth=2; c.beginPath(); c.moveTo(14,200); c.lineTo(626,200); c.stroke();
+    c.fillStyle='rgba(0,0,0,.3)'; c.fillRect(322,6,5,392); c.fillStyle='#e8eef2'; c.fillRect(317,4,6,392); c.fillStyle='#8a939a'; for(let y=6;y<396;y+=8) c.fillRect(317,y,6,1.500);
+    c.font='900 54px sans-serif'; c.textAlign='center'; c.fillStyle='rgba(255,255,255,.22)'; c.fillText(me,240,70); c.fillText(ai,400,70); c.textAlign='left';
+    bat(c,26,py,'#e2362c',false); bat(c,614,ay,'#2f6fd0',true);
+    if(g.playing){ tr.push([b.x,b.y]); if(tr.length>8) tr.shift(); } tr.forEach((q,i)=>{ c.fillStyle=`rgba(255,255,255,${i/28})`; c.beginPath(); c.arc(q[0],q[1],3+i*.5,0,7); c.fill(); });
+    c.fillStyle='rgba(0,0,0,.3)'; c.beginPath(); c.ellipse(b.x+4,b.y+7,8,5,0,0,7); c.fill(); c.fillStyle=Kit.rgrad(c,b.x-3,b.y-3,10,'#ffffff','#ffb347'); c.beginPath(); c.arc(b.x,b.y,8,0,7); c.fill(); }
 });
 })();
 </script>

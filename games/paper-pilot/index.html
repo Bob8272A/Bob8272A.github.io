@@ -11,17 +11,28 @@
 (function () {
 let y, vy, gates, sp;
 function flap(g){ vy=-330; g.beep(520,.05,'triangle'); }
+let scroll=0;
 Kit.game({ id:'paper-pilot', title:'Paper Pilot', w:420, h:620, help:'Tap, click or press Space to lift the paper plane through the gaps.',
   start(){ y=300; vy=0; gates=[]; sp=0; }, tap(x,yy,g){ flap(g); }, key(c,g){ if(c==='Space'||c==='ArrowUp'||c==='KeyW') flap(g); },
   update(dt,g){ vy+=900*dt; y+=vy*dt; sp-=dt; if(sp<=0){ sp=1.45; gates.push({x:440,gy:Kit.rnd(150,470),done:false}); }
     const gap=Math.max(120,165-g.score*1.5);
-    for(const q of gates){ q.x-=170*dt; if(!q.done&&q.x<80){ q.done=true; g.score++; g.beep(880,.06); }
+    for(const q of gates){ q.x-=170*dt; if(!q.done&&q.x<80){ q.done=true; g.score++; g.beep(880,.06); g.burst(100,y,'#ffffff',6,80); }
       if(q.x<118&&q.x+56>82&&(y-10<q.gy-gap/2||y+10>q.gy+gap/2)){ g.beep(120,.4,'sawtooth'); return g.over(); } q.gap=gap; }
     gates=gates.filter(q=>q.x>-60); if(y>610||y<-30){ g.beep(120,.4,'sawtooth'); g.over(); } },
-  draw(c,g){ const gr=c.createLinearGradient(0,0,0,620); gr.addColorStop(0,'#101a2c'); gr.addColorStop(1,'#1d2b3f'); c.fillStyle=gr; c.fillRect(0,0,420,620);
-    for(const q of gates){ const gp=q.gap||160; c.fillStyle='#3a4856'; c.fillRect(q.x,0,56,q.gy-gp/2); c.fillRect(q.x,q.gy+gp/2,56,620); c.fillStyle='#f5b524'; c.fillRect(q.x,q.gy-gp/2-5,56,5); c.fillRect(q.x,q.gy+gp/2,56,5); }
-    c.save(); c.translate(100,y); c.rotate(Kit.clamp(vy/600,-.5,.9)); c.fillStyle='#f3f2ec'; c.beginPath(); c.moveTo(20,0); c.lineTo(-18,-12); c.lineTo(-10,0); c.lineTo(-18,12); c.closePath(); c.fill();
-    c.fillStyle='#b9c3c9'; c.beginPath(); c.moveTo(20,0); c.lineTo(-10,0); c.lineTo(-14,8); c.closePath(); c.fill(); c.restore(); }
+  draw(c,g){ if(g.playing) scroll+=2.800; c.fillStyle=Kit.grad(c,0,0,0,620,'#5fb4e8','#a9dbf5','#fde7c3'); c.fillRect(0,0,420,620);
+    c.fillStyle='#fff4c2'; c.beginPath(); c.arc(330,90,34,0,7); c.fill(); c.fillStyle='rgba(255,244,194,.3)'; c.beginPath(); c.arc(330,90,54,0,7); c.fill();
+    for(let i=0;i<5;i++) Kit.cloud(c,((i*150-scroll*.2)%700+700)%700-90,70+(i*83)%230,1+(i%3)*.3,'rgba(255,255,255,.85)');
+    c.fillStyle='#8cc9a0'; c.beginPath(); c.moveTo(0,620); for(let x=0;x<=420;x+=20) c.lineTo(x,520-Math.sin((x+scroll*.3)*.012)*36-Math.sin((x+scroll*.3)*.031)*12); c.lineTo(420,620); c.fill();
+    c.fillStyle='#5aa870'; c.beginPath(); c.moveTo(0,620); for(let x=0;x<=420;x+=20) c.lineTo(x,570-Math.sin((x+scroll*.6)*.02)*22); c.lineTo(420,620); c.fill();
+    for(const q of gates){ const gp=q.gap||160; for(const [y0,y1,cap] of [[-10,q.gy-gp/2,q.gy-gp/2-16],[q.gy+gp/2,630,q.gy+gp/2]]){
+        c.fillStyle=Kit.grad(c,q.x,0,q.x+56,0,'#f4ead8','#fffaf0','#d9cdb8'); c.fillRect(q.x+4,y0,48,y1-y0);
+        c.fillStyle='#c94f4f'; for(let y=Math.ceil(y0/36)*36;y<y1;y+=36) c.fillRect(q.x+4,Math.max(y0,y),48,Math.min(12,y1-y));
+        c.fillStyle='rgba(0,0,0,.12)'; c.fillRect(q.x+44,y0,8,y1-y0);
+        c.fillStyle='#3a4856'; c.beginPath(); c.roundRect(q.x-3,cap,62,16,4); c.fill(); c.fillStyle='#f5b524'; c.fillRect(q.x-3,cap+6,62,4); } }
+    const a=Kit.clamp(vy/600,-.5,.9); c.strokeStyle='rgba(255,255,255,.7)'; c.lineWidth=2; c.setLineDash([6,7]); c.beginPath(); c.moveTo(82,y); c.quadraticCurveTo(50,y+vy*.02,14,y-vy*.05); c.stroke(); c.setLineDash([]);
+    c.save(); c.translate(100,y); c.rotate(a); c.fillStyle='rgba(0,0,0,.15)'; c.beginPath(); c.moveTo(24,6); c.lineTo(-20,-6); c.lineTo(-20,18); c.fill();
+    c.fillStyle='#ffffff'; c.beginPath(); c.moveTo(26,0); c.lineTo(-20,-14); c.lineTo(-11,0); c.closePath(); c.fill(); c.fillStyle='#dfe6ec'; c.beginPath(); c.moveTo(26,0); c.lineTo(-11,0); c.lineTo(-20,13); c.closePath(); c.fill();
+    c.fillStyle='#b7c2cc'; c.beginPath(); c.moveTo(26,0); c.lineTo(-11,0); c.lineTo(-13,8); c.closePath(); c.fill(); c.strokeStyle='#e2362c'; c.lineWidth=1.500; c.beginPath(); c.moveTo(-14,-9); c.lineTo(6,-4); c.stroke(); c.restore(); }
 });
 })();
 </script>

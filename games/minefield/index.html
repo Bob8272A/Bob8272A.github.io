@@ -13,7 +13,7 @@ const N=12, M=22, C=40; let cells, first, flagMode, openCount;
 const at=(x,y)=>x>=0&&y>=0&&x<N&&y<N?cells[y*N+x]:null;
 const around=(x,y)=>{ const o=[]; for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ if(dx||dy){ const q=at(x+dx,y+dy); if(q) o.push(q); } } return o; };
 function lay(sx,sy){ let n=0; while(n<M){ const q=cells[Kit.irnd(N*N)]; if(!q.mine&&(Math.abs(q.x-sx)>1||Math.abs(q.y-sy)>1)){ q.mine=true; n++; } } for(const q of cells) q.n=around(q.x,q.y).filter(a=>a.mine).length; }
-function open(q,g){ if(q.open||q.flag) return; q.open=true; openCount++; if(q.mine){ cells.forEach(k=>{ if(k.mine) k.open=true; }); g.beep(90,.5,'sawtooth'); g.noBest=true; return g.over('Boom!'); }
+function open(q,g){ if(q.open||q.flag) return; q.open=true; openCount++; if(q.mine){ cells.forEach(k=>{ if(k.mine) k.open=true; }); g.beep(90,.5,'sawtooth'); g.noBest=true; g.shake(16); g.burst(q.x*C+20,q.y*C+20,'#f08a52',30,260); return g.over('Boom!'); }
   if(!q.n) around(q.x,q.y).forEach(a=>open(a,g)); }
 Kit.game({ id:'minefield', title:'Minefield', w:480, h:540, unit:'Seconds', low:true, help:'Click a square to open it. Numbers count the mines touching that square. Press F or use the Flag button to mark mines. Open every safe square.',
   start(){ cells=[]; for(let y=0;y<N;y++)for(let x=0;x<N;x++) cells.push({x,y,mine:false,open:false,flag:false,n:0}); first=true; flagMode=false; openCount=0; },
@@ -22,12 +22,18 @@ Kit.game({ id:'minefield', title:'Minefield', w:480, h:540, unit:'Seconds', low:
     if(flagMode){ if(!q.open){ q.flag=!q.flag; g.beep(500,.04); } return; } if(first){ first=false; lay(q.x,q.y); g.t=0; }
     open(q,g); g.beep(660,.03); if(g.playing&&openCount===N*N-M) g.win('Field cleared!'); },
   update(dt,g){ g.score=first?0:Math.floor(g.t); },
-  draw(c){ c.font='900 20px sans-serif'; c.textAlign='center'; c.textBaseline='middle';
-    for(const q of cells){ const X=q.x*C,Y=q.y*C; c.fillStyle=q.open?(q.mine?'#7a1f1a':'#151c24'):'#2b3743'; c.fillRect(X+1,Y+1,C-2,C-2);
-      if(q.open&&q.mine){ c.fillStyle='#0b0f14'; c.beginPath(); c.arc(X+20,Y+20,10,0,7); c.fill(); }
-      else if(q.open&&q.n){ c.fillStyle=['','#4fc3f7','#3fb374','#f5b524','#f08a52','#e2362c','#d06bd0','#fff','#fff'][q.n]; c.fillText(q.n,X+20,Y+22); }
-      else if(q.flag){ c.fillStyle='#e2362c'; c.beginPath(); c.moveTo(X+14,Y+9); c.lineTo(X+29,Y+16); c.lineTo(X+14,Y+23); c.fill(); c.fillRect(X+12,Y+9,3,22); } }
-    c.fillStyle=flagMode?'#e2362c':'#2b3743'; c.beginPath(); c.roundRect(150,490,180,40,8); c.fill(); c.fillStyle='#f3f2ec'; c.font='900 16px sans-serif'; c.fillText(flagMode?'FLAG MODE: ON':'FLAG MODE: OFF',240,511); c.textAlign='left'; c.textBaseline='alphabetic'; }
+  draw(c,g){ c.fillStyle='#1b2a1f'; c.fillRect(0,0,480,540); c.font='900 21px sans-serif'; c.textAlign='center'; c.textBaseline='middle';
+    for(const q of cells){ const X=q.x*C,Y=q.y*C;
+      if(!q.open){ c.fillStyle=(q.x+q.y)%2?'#4f9a55':'#57a65d'; c.fillRect(X,Y,C,C); c.fillStyle='rgba(255,255,255,.22)'; c.fillRect(X,Y,C,3); c.fillRect(X,Y,3,C); c.fillStyle='rgba(0,0,0,.22)'; c.fillRect(X,Y+C-3,C,3); c.fillRect(X+C-3,Y,3,C);
+        c.fillStyle='rgba(20,60,25,.35)'; c.fillRect(X+9+(q.x*7)%14,Y+11+(q.y*5)%12,2,6); c.fillRect(X+22+(q.y*3)%8,Y+24,2,5);
+        if(q.flag){ c.fillStyle='rgba(0,0,0,.3)'; c.beginPath(); c.ellipse(X+21,Y+33,8,3,0,0,7); c.fill(); c.fillStyle='#e9e4d0'; c.fillRect(X+13,Y+7,3,26); c.fillStyle='#e2362c'; c.beginPath(); c.moveTo(X+16,Y+7); c.quadraticCurveTo(X+26,Y+9,X+32,Y+14); c.quadraticCurveTo(X+24,Y+18,X+16,Y+21); c.fill(); } }
+      else { c.fillStyle=q.mine?'#8a2a22':((q.x+q.y)%2?'#d9c49a':'#e3d0a8'); c.fillRect(X,Y,C,C); c.fillStyle='rgba(0,0,0,.08)'; c.fillRect(X,Y,C,2); c.fillRect(X,Y,2,C);
+        if(q.mine){ c.strokeStyle='#15181c'; c.lineWidth=3; for(let i=0;i<4;i++){ const a=i*Math.PI/4; c.beginPath(); c.moveTo(X+20+Math.cos(a)*15,Y+20+Math.sin(a)*15); c.lineTo(X+20-Math.cos(a)*15,Y+20-Math.sin(a)*15); c.stroke(); }
+          c.fillStyle=Kit.rgrad(c,X+16,Y+16,14,'#5a6068','#15181c'); c.beginPath(); c.arc(X+20,Y+20,10,0,7); c.fill(); c.fillStyle='#fff'; c.beginPath(); c.arc(X+16,Y+16,2.500,0,7); c.fill(); }
+        else if(q.n){ c.fillStyle=['','#1f6fd0','#2a8f3f','#d0342a','#5a2fb0','#a8521a','#178a8a','#222','#555'][q.n]; c.fillText(q.n,X+20,Y+22); } } }
+    c.strokeStyle='rgba(0,0,0,.15)'; c.lineWidth=1; for(let i=1;i<N;i++){ c.beginPath(); c.moveTo(i*C,0); c.lineTo(i*C,480); c.moveTo(0,i*C); c.lineTo(480,i*C); c.stroke(); }
+    const left=M-cells.filter(q=>q.flag).length; c.fillStyle=flagMode?'#e2362c':'#2b3743'; c.beginPath(); c.roundRect(150,490,180,40,8); c.fill(); c.fillStyle='#f3f2ec'; c.font='900 15px sans-serif'; c.fillText(flagMode?'FLAG MODE: ON':'FLAG MODE: OFF',240,511);
+    c.textAlign='left'; c.fillStyle='#e9e4d0'; c.fillText('Mines left: '+left,14,511); c.textBaseline='alphabetic'; }
 });
 })();
 </script>
