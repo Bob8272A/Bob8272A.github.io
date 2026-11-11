@@ -389,6 +389,7 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px;margin:0}
         <div class="scale"><span>Smooth</span><span>Twitchy</span></div>
       </div>
       <label class="check" for="setCenter"><input type="checkbox" id="setCenter" checked> Auto-straighten when you let go of steering</label>
+      <label class="check" for="setSwipe"><input type="checkbox" id="setSwipe"> Side-swipes can't wreck my car (damage stops at 99%)</label>
       <div class="field">
         <span class="field-label" id="trackLabel">Music</span>
         <div class="seg" role="radiogroup" aria-labelledby="trackLabel" id="setTrack">
@@ -2168,7 +2169,7 @@ const Music = {
 // ======================================================================
 // Settings (persisted per viewer)
 // ======================================================================
-const SET = { v: 2, traffic: 1, diff: 'normal', steer: 1.0, autoCenter: true, divided: true, terrain: 'flat', track: 'night', music: 0.7, sfx: 0.8, muted: false };
+const SET = { v: 2, traffic: 1, swipeSafe: false, diff: 'normal', steer: 1.0, autoCenter: true, divided: true, terrain: 'flat', track: 'night', music: 0.7, sfx: 0.8, muted: false };
 try {
   const saved = JSON.parse(localStorage.getItem('interstate-weave-settings') || '{}');
   if (saved.v !== 2) delete saved.steer; // steering model changed; start from the new default
@@ -2322,7 +2323,15 @@ $('resumeBtn').addEventListener('click', () => { if (state === 'paused') toggleP
 // restart the current run from the start (same mode, level, car and settings)
 function restartRun() {
   if (state === 'menu' || !$('settings').hidden) return;
+  // Bank what this run earned (best score + career points) before throwing it away.
+  let banked = 0, fresh = [];
+  if (state === 'play' || state === 'paused') {
+    banked = Math.floor(P.score);
+    if (banked > best) { best = banked; try { localStorage.setItem('interstate-weave-best', String(best)); } catch (e) { /* storage unavailable */ } }
+    if (banked > 0) fresh = awardCareer(banked);
+  }
   startGame();
+  if (banked > 0) popup('RUN BANKED', `+${banked.toLocaleString('en-US')} career pts kept` + (fresh.length ? ` · Unlocked ${fresh.map((c) => c.name).join(', ')}` : ''));
 }
 $('hudRestart').addEventListener('click', (e) => { e.currentTarget.blur(); restartRun(); });
 $('pauseRestart').addEventListener('click', restartRun);
@@ -2339,6 +2348,7 @@ function syncSettingsUI() {
   $('setSfxVol').value = Math.round(SET.sfx * 100); $('setSfxVolVal').textContent = Math.round(SET.sfx * 100) + '%';
   $('setMute').checked = SET.muted;
   $('setCenter').checked = SET.autoCenter;
+  $('setSwipe').checked = !!SET.swipeSafe;
   document.querySelectorAll('#setTrack button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.v === SET.track)));
 }
 let settingsReturn = null;
@@ -2356,6 +2366,7 @@ $('setMusicVol').addEventListener('input', (e) => { SET.music = e.target.value /
 $('setSfxVol').addEventListener('input', (e) => { SET.sfx = e.target.value / 100; $('setSfxVolVal').textContent = e.target.value + '%'; Sound.applyVolumes(); });
 $('setMute').addEventListener('change', (e) => { SET.muted = e.target.checked; Sound.applyVolumes(); });
 $('setCenter').addEventListener('change', (e) => { SET.autoCenter = e.target.checked; saveSettings(); });
+$('setSwipe').addEventListener('change', (e) => { SET.swipeSafe = e.target.checked; saveSettings(); });
 document.querySelectorAll('#setTrack button').forEach((b) => b.addEventListener('click', () => {
   SET.track = b.dataset.v; syncSettingsUI(); saveSettings();
   Sound.init(); Music.stop(); Music.start();
@@ -2794,7 +2805,8 @@ function checkCollisions() {
 
 // Glancing contact: push the cars apart, throw sparks and take damage instead of wrecking.
 function takeDamage(amount, c, what) {
-  P.damage = Math.min(1, P.damage + amount);
+  // "Side-swipes can't wreck my car": scrapes stop short of a total wreck (bumper hits still count in full)
+  P.damage = Math.min(what === 'scrape' && SET.swipeSafe ? 0.99 : 1, P.damage + amount);
   feedFlow(-0.08);
   if (P.damage >= 1) {
     crash({ msg: `Your car couldn't take another ${what}. ${KIND_NAME[c.kind][0].toUpperCase() + KIND_NAME[c.kind].slice(1)} finished it off at ${Math.round(P.fwd * MPH)} mph.` }, c.lane !== undefined ? c : null);
