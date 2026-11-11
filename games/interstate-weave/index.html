@@ -203,6 +203,11 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px;margin:0}
         <div class="meter"><span>FLOW</span><div class="bar flow" id="hFlowBar"><i id="hFlow"></i></div></div>
         <div class="lvl-sub" id="hRushSub">Cut-ups 0 · Gaps threaded 0</div>
       </div>
+      <div class="lvl" id="hStunt" hidden>
+        <div class="lvl-top"><b>STUNT RUN</b><span class="heat" id="hAir">BEST AIR 0 m</span></div>
+        <div class="meter"><span>NITRO</span><div class="bar flow"><i id="hNitro"></i></div></div>
+        <div class="lvl-sub" id="hStuntSub">Shift = nitro · ramps on the right shoulder</div>
+      </div>
       <canvas id="radar" width="132" height="300" aria-label="Police radar" hidden></canvas>
     </div>
     <div class="right">
@@ -227,11 +232,11 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px;margin:0}
     </div>
     <div class="hint" id="hint">
       <kbd>W</kbd>/<kbd>↑</kbd> gas &nbsp; <kbd>S</kbd>/<kbd>↓</kbd> brake &nbsp; <kbd>A</kbd><kbd>D</kbd> steer<br>
-      <kbd>C</kbd> camera &nbsp; <kbd>M</kbd> sound &nbsp; <kbd>P</kbd> pause
+      <kbd>C</kbd> camera &nbsp; <kbd>R</kbd> rewind 7 s &nbsp; <kbd>M</kbd> sound &nbsp; <kbd>P</kbd> pause
     </div>
     <div class="touch" id="touch">
       <div class="grp"><button data-k="l" aria-label="Steer left">◀</button><button data-k="r" aria-label="Steer right">▶</button></div>
-      <div class="grp"><button class="brk" data-k="b">BRAKE</button><button class="gas" data-k="g">GAS</button></div>
+      <div class="grp"><button class="gas" data-k="n" id="touchNos" hidden>NOS</button><button class="brk" data-k="b">BRAKE</button><button class="gas" data-k="g">GAS</button></div>
     </div>
   </div>
   <div class="flash" id="flash"></div>
@@ -290,12 +295,18 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px;margin:0}
         <p class="lvl-info" id="diffInfo"></p>
       </div>
       <div class="field">
+        <label class="field-label row" for="trafficAmt"><span>Traffic</span><span class="val" id="trafficVal">100%</span></label>
+        <input type="range" id="trafficAmt" min="0" max="200" step="10" value="100">
+        <div class="scale"><span>Empty road</span><span>Standard</span><span>Double</span></div>
+      </div>
+      <div class="field">
         <span class="field-label" id="modeLabel">Mode</span>
         <div class="seg" role="radiogroup" aria-labelledby="modeLabel" id="modeSeg">
           <button role="radio" id="mode-levels" data-v="levels" aria-checked="true">Levels</button>
           <button role="radio" id="mode-endless" data-v="endless" aria-checked="false">Endless</button>
           <button role="radio" id="mode-pursuit" data-v="pursuit" aria-checked="false">Pursuit</button>
           <button role="radio" id="mode-rush" data-v="rush" aria-checked="false">Rush hour</button>
+          <button role="radio" id="mode-stunt" data-v="stunt" aria-checked="false">Stunt run</button>
         </div>
       </div>
       <div class="field" id="levelField">
@@ -306,6 +317,7 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px;margin:0}
       <p class="lvl-info" id="endlessInfo" hidden>No finish line. Traffic gets heavier and faster the farther you drive.</p>
       <p class="lvl-info" id="pursuitInfo" hidden>Police cruisers hunt you down. They ram you and try to box you in, so stay above 50 mph. Get 320 m clear for 6 seconds to escape. Each escape raises the heat, which brings more units and faster cars. Lure cruisers into traffic for takedown points.</p>
       <p class="lvl-info" id="rushInfo" hidden>Bumper-to-bumper traffic at 45 mph and you're doing triple that. Your flow meter drains every second, so keep cutting up: change lanes into tight gaps, slip between two cars side by side, and skim past bumpers. A full meter triples your points. If it runs dry your points drop to ×1 until you build it back up. Only a wreck ends the run. Scrapes cost you some flow.</p>
+      <p class="lvl-info" id="stuntInfo" hidden>Jump ramps line the right shoulder: pull onto one to launch over traffic, and score for distance and every car you clear. Blue canisters fill your nitro tank, some hanging in the air past a ramp. Hold Shift to burn it.</p>
       <div class="btns">
         <button class="go" id="startBtn">Start level 1</button>
         <button class="go alt narrow" id="menuSettings">Settings</button>
@@ -1367,6 +1379,100 @@ function createVehicle(kind, paintDef, opts = {}) {
 }
 
 // ======================================================================
+// Driver's-seat view: an interior fitted to each car's cabin, plus that car's own nose and mirrors
+// ======================================================================
+const INT = { // a little self-glow keeps the cabin readable at dusk and night
+  dash: new THREE.MeshStandardMaterial({ color: 0x2a2c31, roughness: 0.85, emissive: 0x15171b }),
+  soft: new THREE.MeshStandardMaterial({ color: 0x383b42, roughness: 0.7, emissive: 0x1a1c21 }),
+  wheel: new THREE.MeshStandardMaterial({ color: 0x1a1b1e, roughness: 0.5, emissive: 0x101114 }),
+  liner: new THREE.MeshStandardMaterial({ color: 0x3c3f46, roughness: 0.95, emissive: 0x17191d }),
+  leather: new THREE.MeshStandardMaterial({ color: 0x6a4a34, roughness: 0.6, emissive: 0x22170f }),
+};
+const [clusterCan, clusterG] = makeCanvas(256, 128);
+const clusterMat = new THREE.MeshBasicMaterial({ map: canvasTex(clusterCan, true, false), toneMapped: false });
+const navMat = (() => {
+  const [c, g] = makeCanvas(256, 160);
+  g.fillStyle = '#071018'; g.fillRect(0, 0, 256, 160);
+  g.strokeStyle = '#1d3344'; g.lineWidth = 2; for (let i = 0; i < 9; i++) { g.beginPath(); g.moveTo(i * 34 - 20, 0); g.lineTo(i * 34 + 30, 160); g.stroke(); g.beginPath(); g.moveTo(0, i * 26); g.lineTo(256, i * 26 - 30); g.stroke(); }
+  g.strokeStyle = '#39b8ff'; g.lineWidth = 9; g.lineCap = 'round'; g.beginPath(); g.moveTo(128, 150); g.lineTo(128, 80); g.lineTo(170, 30); g.stroke();
+  g.fillStyle = '#f5b524'; g.beginPath(); g.moveTo(128, 104); g.lineTo(140, 128); g.lineTo(128, 122); g.lineTo(116, 128); g.fill();
+  g.fillStyle = '#f3f2ec'; g.font = '700 16px Overpass, Arial, sans-serif'; g.fillText('I-90 EAST', 12, 24); g.fillStyle = '#9aa4ab'; g.font = '700 12px Overpass, Arial, sans-serif'; g.fillText('Keep right', 12, 42);
+  return new THREE.MeshBasicMaterial({ map: canvasTex(c, true, false), toneMapped: false });
+})();
+let clusterAt = 0;
+function drawCluster(now) {
+  if (now - clusterAt < 90) return;
+  clusterAt = now;
+  const g = clusterG, rf = clamp(P.rpm / 8000, 0, 1);
+  g.fillStyle = '#05070a'; g.fillRect(0, 0, 256, 128);
+  for (let i = 0; i < 24; i++) { g.fillStyle = i / 24 < rf ? (i > 20 ? '#ff3b30' : i > 16 ? '#f5b524' : '#7ff0ff') : '#1a2026'; g.fillRect(14 + i * 9.6, 30 - i * 0.6, 7, 10 + i * 0.6); }
+  g.textAlign = 'center'; g.fillStyle = '#f3f2ec'; g.font = '900 62px Overpass, Arial, sans-serif'; g.fillText(String(Math.round(P.fwd * MPH)), 112, 104);
+  g.fillStyle = '#9aa4ab'; g.font = '700 15px Arial, sans-serif'; g.fillText('MPH', 196, 102);
+  g.fillStyle = '#f5b524'; g.font = '900 28px Overpass, Arial, sans-serif'; g.fillText(P.crashed ? 'N' : 'D' + (P.gear + 1), 216, 76);
+  if (mode === 'stunt') { g.fillStyle = '#1a2026'; g.fillRect(14, 114, 228, 7); g.fillStyle = '#39b8ff'; g.fillRect(14, 114, 228 * STUNT.nitro, 7); }
+  clusterMat.map.needsUpdate = true;
+}
+function buildCockpit(v, c) {
+  const kind = c.kind, G = kindGeo(kind, true);
+  let s0, y0, s1, y1, cw, mx, my;
+  if (kind === 'or1') { s0 = 0.86; y0 = 0.7; s1 = 0; y1 = 1.08; cw = 0.66; mx = 0.95; my = 0.78; }
+  else { const sh = SPECS[kind].shells[0]; s0 = sh.pts[0][0]; y0 = sh.pts[0][1]; s1 = sh.pts[1][0]; y1 = sh.pts[1][1] - 0.03; cw = (G.W * sh.w) / 2 - 0.03; mx = G.W / 2 + 0.02; my = y0 - 0.1; }
+  const ex = -cw * 0.5, es = s1 - 0.42, ey = y1 - 0.14, sD = es + 0.62, yT = Math.min(y0 + 0.05, ey - 0.19);
+  const cab = new THREE.Group();
+  const add = (geo, mat) => { const m = new THREE.Mesh(geo, mat); cab.add(m); return m; };
+  const prism = (pts, x0, x1) => { const sh = new THREE.Shape(); pts.forEach((p, i) => (i ? sh.lineTo(p[0], p[1]) : sh.moveTo(p[0], p[1]))); return new THREE.ExtrudeGeometry(sh, { depth: x1 - x0, bevelEnabled: false }).rotateY(Math.PI / 2).translate(x0, 0, 0); };
+  const strut = (a, b, w, h, mat) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 1), mat), A = new THREE.Vector3(a[0], a[1], a[2]), B = new THREE.Vector3(b[0], b[1], b[2]); m.position.copy(A).add(B).multiplyScalar(0.5); m.scale.z = A.distanceTo(B); m.lookAt(B); cab.add(m); };
+  const strip = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: c.led ?? 0xff2a1a, emissiveIntensity: 1.1 });
+  // the car's own bonnet, wings and mirrors: every body triangle ahead of the windscreen or outboard of the doors
+  for (const m of v.body.children) {
+    if (!m.isMesh || m.geometry.index || !m.geometry.attributes.normal) continue;
+    const p = m.geometry.attributes.position.array, n = m.geometry.attributes.normal.array, kp = [], kn = [];
+    for (let i = 0; i < p.length; i += 9) {
+      const cx = (p[i] + p[i + 3] + p[i + 6]) / 3, cy = (p[i + 1] + p[i + 4] + p[i + 7]) / 3, cs = -(p[i + 2] + p[i + 5] + p[i + 8]) / 3;
+      if (cs > s0 - 0.02 || (Math.abs(cx) > mx && cy > my && cs > es)) for (let k = 0; k < 9; k++) { kp.push(p[i + k]); kn.push(n[i + k]); }
+    }
+    if (!kp.length) continue;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(kp), 3)); g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(kn), 3));
+    add(g, m.material);
+  }
+  // dashboard, instrument binnacle and live cluster
+  add(prism([[s0 + 0.03, y0 - 0.5], [s0 + 0.03, y0 - 0.01], [sD + 0.16, yT + 0.012], [sD, yT], [sD - 0.05, yT - 0.16], [sD + 0.08, yT - 0.5]], -cw, cw), INT.dash);
+  add(box(2 * cw, 0.006, 0.012, 0, yT + 0.005, sD + 0.03), strip);
+  add(prism([[sD + 0.22, yT], [sD + 0.17, yT + 0.12], [sD - 0.02, yT + 0.14], [sD - 0.05, yT + 0.125], [sD - 0.025, yT]], ex - 0.2, ex + 0.2), INT.soft);
+  const scr = add(new THREE.PlaneGeometry(0.26, 0.11), clusterMat); scr.position.set(ex, yT + 0.066, -(sD - 0.047)); scr.rotation.x = -0.2;
+  // steering wheel on its column
+  const sw = new THREE.Group(), rim = new THREE.Group();
+  sw.position.set(ex, ey - 0.335, -(es + 0.42)); sw.rotation.x = -0.36; sw.add(rim); cab.add(sw);
+  rim.add(new THREE.Mesh(new THREE.TorusGeometry(0.162, 0.016, 12, 44), INT.wheel));
+  for (const sx of [-1, 1]) rim.add(new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.034, 0.014).translate(sx * 0.105, 0.005, 0), INT.wheel), new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.07, 0.05).translate(sx * 0.115, 0.02, -0.035), MAT.chrome));
+  rim.add(new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.13, 0.014).translate(0, -0.1, 0), INT.wheel));
+  rim.add(new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.058, 0.035, 24).rotateX(Math.PI / 2), INT.soft));
+  rim.add(new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.012, 0.036).translate(0, 0.162, 0), strip));
+  sw.add(new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.04, 0.3, 14).rotateX(Math.PI / 2).translate(0, 0, -0.16), INT.dash));
+  // pillars, roof rails, door cards
+  for (const sx of [-1, 1]) {
+    strut([sx * cw, y0 - 0.02, -(s0 + 0.02)], [sx * cw * 0.9, y1, -s1], 0.075, 0.06, INT.dash);
+    strut([sx * cw * 0.9, y1, -s1], [sx * cw * 0.92, y1 - 0.01, -(es - 0.7)], 0.07, 0.06, INT.liner);
+    add(box(0.05, 0.62, s0 - es + 0.75, sx * (cw + 0.012), y0 - 0.28, (s0 + es - 0.75) / 2), INT.soft);
+    add(box(0.08, 0.035, 0.5, sx * (cw - 0.04), y0 - 0.1, es + 0.22), INT.leather);
+    add(box(0.012, 0.012, s0 - es + 0.6, sx * (cw - 0.018), y0 + 0.012, (s0 + es - 0.6) / 2), strip);
+  }
+  add(box(2 * cw * 0.9, 0.05, 0.09, 0, y1, s1), INT.liner);
+  add(box(2 * cw * 0.92, 0.02, s1 - es + 0.7, 0, y1 + 0.022, (s1 + es - 0.7) / 2), INT.liner);
+  add(box(0.2, 0.06, 0.03, 0, y1 - 0.08, s1 - 0.08), INT.dash); add(box(0.18, 0.045, 0.004, 0, y1 - 0.08, s1 - 0.098), MAT.chrome);
+  // centre stack, screen, console
+  add(prism([[sD + 0.1, yT - 0.02], [sD - 0.03, yT - 0.05], [sD - 0.1, yT - 0.42], [sD + 0.1, yT - 0.5]], -0.13, 0.13), INT.soft);
+  const nav = add(new THREE.PlaneGeometry(0.2, 0.125), navMat); nav.position.set(0, yT - 0.15, -(sD - 0.056)); nav.rotation.x = -0.19;
+  add(box(0.24, 0.16, 0.9, 0, yT - 0.46, sD - 0.52), INT.soft);
+  add(box(0.045, 0.075, 0.045, 0.03, yT - 0.35, sD - 0.3), MAT.chrome);
+  for (const x of [ex - 0.28, ex + 0.28, cw * 0.55]) { add(new THREE.CylinderGeometry(0.036, 0.036, 0.02, 18).rotateX(Math.PI / 2).translate(x, yT - 0.075, -(sD - 0.04)), MAT.chrome); add(new THREE.CylinderGeometry(0.028, 0.028, 0.024, 18).rotateX(Math.PI / 2).translate(x, yT - 0.075, -(sD - 0.042)), INT.wheel); }
+  add(box(2 * cw, 0.02, 1.7, 0, ey - 1.0, es + 0.25), INT.liner);
+  cab.visible = false;
+  return { group: cab, eye: [ex, ey, -es], steer: rim };
+}
+
+// ======================================================================
 // Player
 // ======================================================================
 const PLAYER_PAINTS = [
@@ -1396,6 +1502,7 @@ const playerCars = {};
 function getPlayerCar(c) {
   if (!playerCars[c.id]) {
     const v = createVehicle(c.kind, PLAYER_PAINTS[paintIdx].def, { separateWheels: true, rim: c.rim, accent: c.accent, led: c.led, glow: c.glow });
+    const ck = buildCockpit(v, c); v.cab = ck.group; v.eye = ck.eye; v.steer = ck.steer; v.group.add(v.cab);
     v.group.position.y = -RIG_Y; playerCars[c.id] = v;
     patchHill(v.group);
   }
@@ -1491,7 +1598,8 @@ function resetTraffic() {
     if (c.idx < DIFF.traffic) spawnCar(c, 'init');
     else { c.z = 9999; c.veh.group.visible = false; }
   }
-  for (const o of oncoming) spawnOncoming(o, true);
+  const onc = Math.round(oncoming.length * clamp(+SET.traffic >= 0 ? +SET.traffic : 1, 0, 1));
+  oncoming.forEach((o, i) => { o.off = i >= onc; spawnOncoming(o, true); o.veh.group.visible = !o.off; if (o.off) o.z = -5000; });
 }
 
 function updateTraffic(dt, fwd) {
@@ -1565,6 +1673,7 @@ function updateTraffic(dt, fwd) {
     for (const s of c.veh.glowT) s.scale.setScalar(c.braking ? 1.35 : 0.9);
   }
   for (const o of oncoming) {
+    if (o.off) continue;
     if (o.crashed) { o.v = Math.max(0, o.v - 14 * dt); o.veh.group.rotation.y += o.spinV * dt; o.spinV *= Math.exp(-1.5 * dt); }
     o.z += (fwd + o.v) * dt;
     if (o.z > Z_NEAR + 20) spawnOncoming(o, false);
@@ -2059,7 +2168,7 @@ const Music = {
 // ======================================================================
 // Settings (persisted per viewer)
 // ======================================================================
-const SET = { v: 2, diff: 'normal', steer: 1.0, autoCenter: true, divided: true, terrain: 'flat', track: 'night', music: 0.7, sfx: 0.8, muted: false };
+const SET = { v: 2, traffic: 1, diff: 'normal', steer: 1.0, autoCenter: true, divided: true, terrain: 'flat', track: 'night', music: 0.7, sfx: 0.8, muted: false };
 try {
   const saved = JSON.parse(localStorage.getItem('interstate-weave-settings') || '{}');
   if (saved.v !== 2) delete saved.steer; // steering model changed; start from the new default
@@ -2124,8 +2233,9 @@ const DIFFS = {
 const curDiff = () => DIFFS[SET.diff] || DIFFS.normal;
 function setDiff(src) {
   const D = curDiff();
-  DIFF.traffic = Math.min(traffic.length, Math.round(src.traffic * D.traffic)); DIFF.speed = src.speed * D.speed;
-  DIFF.lane = Math.min(0.9, src.lane * D.lane); DIFF.pad = src.pad / D.traffic;
+  const amt = clamp(+SET.traffic >= 0 ? +SET.traffic : 1, 0, 2); // the menu's traffic slider: 0 = empty road, 1 = standard, 2 = double
+  DIFF.traffic = Math.min(traffic.length, Math.round(src.traffic * D.traffic * amt)); DIFF.speed = src.speed * D.speed;
+  DIFF.lane = Math.min(0.9, src.lane * D.lane); DIFF.pad = src.pad / D.traffic / Math.max(1, amt);
 }
 function endlessDiff(dist) {
   const t = Math.min(1, dist / (8 * MILE));
@@ -2185,12 +2295,13 @@ const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padSt
 let state = 'menu', camMode = 0, slowmo = 0, shake = 0, best = 0, lastHud = 0;
 try { best = +localStorage.getItem('interstate-weave-best') || 0; } catch (e) { best = 0; }
 const keys = {};
-const touch = { l: 0, r: 0, g: 0, b: 0 };
+const touch = { l: 0, r: 0, g: 0, b: 0, n: 0 };
 addEventListener('keydown', (e) => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   keys[e.code] = true;
   if (e.repeat) return;
   if (e.code === 'KeyC' && state !== 'menu') camMode = 1 - camMode;
+  if (e.code === 'KeyR') rewind();
   if (e.code === 'KeyM') toggleMute();
   if (e.code === 'Escape' && !$('settings').hidden) { closeSettings(); return; }
   if ((e.code === 'KeyP' || e.code === 'Escape') && (state === 'play' || state === 'paused')) togglePause();
@@ -2304,6 +2415,16 @@ document.querySelectorAll('#diffSeg button').forEach((b) => b.addEventListener('
   if (state === 'menu') { setDiff(endlessDiff(0)); resetTraffic(); }
 }));
 
+// traffic amount slider
+function renderTraffic() {
+  const pct = Math.round(clamp(+SET.traffic >= 0 ? +SET.traffic : 1, 0, 2) * 100);
+  $('trafficAmt').value = pct; $('trafficVal').textContent = pct === 0 ? 'None' : pct + '%';
+}
+$('trafficAmt').addEventListener('input', (e) => {
+  SET.traffic = e.target.value / 100; renderTraffic(); saveSettings();
+  if (state === 'menu') { setDiff(endlessDiff(0)); resetTraffic(); }
+});
+
 // mode + level select
 const modeBtns = [...document.querySelectorAll('#modeSeg button')];
 modeBtns.forEach((b) => b.addEventListener('click', () => { mode = b.dataset.v; renderMenu(); }));
@@ -2364,7 +2485,7 @@ function awardCareer(score) {
 function renderMenu() {
   renderGarage();
   modeBtns.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.v === mode)));
-  $('levelField').hidden = mode !== 'levels'; $('endlessInfo').hidden = mode !== 'endless'; $('pursuitInfo').hidden = mode !== 'pursuit'; $('rushInfo').hidden = mode !== 'rush';
+  $('levelField').hidden = mode !== 'levels'; $('endlessInfo').hidden = mode !== 'endless'; $('pursuitInfo').hidden = mode !== 'pursuit'; $('rushInfo').hidden = mode !== 'rush'; $('stuntInfo').hidden = mode !== 'stunt';
   [...gridEl.children].forEach((b, i) => {
     const n = i + 1;
     b.disabled = n > PROG.unlocked;
@@ -2374,13 +2495,13 @@ function renderMenu() {
   });
   $('lvlCount').textContent = `${Object.keys(PROG.cleared).length} / 100 cleared`;
   $('levelInfo').textContent = describeLevel(LEVELS[selLevel - 1]);
-  $('startBtn').textContent = !carUnlocked(car) ? `${car.name} is locked` : mode === 'levels' ? `Start level ${selLevel}` : mode === 'pursuit' ? 'Start pursuit' : mode === 'rush' ? 'Start rush hour' : 'Start endless';
+  $('startBtn').textContent = !carUnlocked(car) ? `${car.name} is locked` : mode === 'levels' ? `Start level ${selLevel}` : mode === 'pursuit' ? 'Start pursuit' : mode === 'rush' ? 'Start rush hour' : mode === 'stunt' ? 'Start stunt run' : 'Start endless';
   $('startBtn').disabled = !carUnlocked(car);
 }
 function toMenu() {
   for (const id of ['over', 'clear', 'pause']) $(id).hidden = true;
   $('menu').hidden = false; $('hud').hidden = true; state = 'menu';
-  setDiff(endlessDiff(0)); resetPlayer(); resetTraffic(); clearCops(); PUR.phase = 'off'; renderMenu();
+  setDiff(endlessDiff(0)); resetPlayer(); resetTraffic(); clearCops(); resetStunt(); PUR.phase = 'off'; renderMenu();
   const sel = $('lv-' + selLevel); if (sel && mode === 'levels') sel.scrollIntoView({ block: 'nearest' });
 }
 $('startBtn').addEventListener('click', startGame);
@@ -2419,11 +2540,13 @@ function startGame() {
   Sound.init(); Music.start();
   LV = mode === 'levels' ? LEVELS[selLevel - 1] : null;
   setDiff(LV || (mode === 'rush' ? rushDiff(0) : endlessDiff(0)));
-  resetPlayer(); resetTraffic(); resetPursuit(); resetRush();
+  resetPlayer(); resetTraffic(); resetPursuit(); resetRush(); resetStunt(); hist.length = 0; histT = 0;
   $('menu').hidden = true; $('over').hidden = true; $('clear').hidden = true; $('pause').hidden = true; $('hud').hidden = false;
   $('hLvl').hidden = !LV; $('pops').innerHTML = '';
   $('hPur').hidden = $('radar').hidden = mode !== 'pursuit';
   $('hRush').hidden = mode !== 'rush';
+  $('hStunt').hidden = $('touchNos').hidden = mode !== 'stunt';
+  if (mode === 'stunt') popup('STUNT RUN', 'Ramps on the right shoulder · hold Shift for nitro');
   if (mode === 'rush') popup('RUSH HOUR', 'Cut up through traffic to keep your flow alive');
   if (mode === 'pursuit') popup('POLICE PURSUIT', 'Units are on the way. Keep moving.');
   if (LV) popup(`LEVEL ${LV.n}`, `${LV.miles.toFixed(1)} mi to ${LV.dest}${LV.near ? ` · ${LV.near} close calls` : ''}${LV.time ? ` · ${fmtTime(LV.time)}` : ''}`);
@@ -2483,6 +2606,7 @@ function crash(reason, other, extraSpeed = 0) {
   emitSparks(P.x, 0.6, -2, 80 + E * 220, P.fwd * 0.2);
   emitDebris(P.x, 0.8, -1.5, Math.round(10 + E * 34), E);
   P.reason = reason;
+  if (state === 'play' && hist.length > 1) popup('WRECKED', 'Press R to rewind 7 seconds');
 }
 function gameOver() {
   state = 'over';
@@ -2492,9 +2616,10 @@ function gameOver() {
   let msg = P.reason ? P.reason.msg : '';
   if (mode === 'pursuit') msg += ` Heat ${PUR.heat}, ${PUR.escapes} escape${PUR.escapes === 1 ? '' : 's'}, ${PUR.downs} unit${PUR.downs === 1 ? '' : 's'} taken down.`;
   if (mode === 'rush') msg += ` ${RUSH.cuts} cut-up${RUSH.cuts === 1 ? '' : 's'}, ${RUSH.threads} gap${RUSH.threads === 1 ? '' : 's'} threaded.`;
+  if (mode === 'stunt') msg += ` ${STUNT.jumps} jump${STUNT.jumps === 1 ? '' : 's'}, longest ${STUNT.bestAir} m.`;
   if (LV && !(P.reason && P.reason.time)) msg += ` Level ${LV.n}: ${Math.max(0, LV.miles - P.dist / MILE).toFixed(1)} mi from ${LV.dest}.`;
   $('overMsg').textContent = msg;
-  $('againBtn').textContent = LV ? `Retry level ${LV.n}` : mode === 'pursuit' ? 'New pursuit' : mode === 'rush' ? 'New rush hour' : 'Drive again';
+  $('againBtn').textContent = LV ? `Retry level ${LV.n}` : mode === 'pursuit' ? 'New pursuit' : mode === 'rush' ? 'New rush hour' : mode === 'stunt' ? 'New stunt run' : 'Drive again';
   const fresh = awardCareer(score);
   if (fresh.length) $('overMsg').textContent += ` New car unlocked: ${fresh.map((c) => c.name).join(', ')}! Pick it in the garage.`;
   $('sScore').textContent = score.toLocaleString('en-US');
@@ -2553,6 +2678,9 @@ function updatePlayer(dt, autopilot) {
     if (P.cvz > 4 && Math.random() < dt * (20 + P.crashE * 30)) emitSmoke(P.x + rand(-0.8, 0.8), 0.3 + P.y, rand(-1.5, 1.5), 0, 1.2 + P.crashE, 1.6 + P.crashE);
     return;
   }
+  // off the ground after a ramp (stunt run): gravity, weak steering, no drive or brakes until touchdown
+  if (P.y > 0 && !STUNT.onRamp) { P.vy -= 15 * dt; P.y += P.vy * dt; if (P.y <= 0) stuntLand(); }
+  const airborne = P.y > 0.02 && !STUNT.onRamp;
   let steerIn = 0, throttle = 0, brk = 0;
   if (autopilot) {
     throttle = P.v < 30 ? 0.4 : 0; steerIn = 0;
@@ -2575,6 +2703,7 @@ function updatePlayer(dt, autopilot) {
   // With auto-straighten off, releasing the keys holds the current heading instead of easing back.
   const centring = SET.autoCenter ? clamp(-P.h * (1.8 + sens * 1.0), -maxYaw, maxYaw) : 0;
   let yawTarget = Math.abs(P.si) > 0.02 ? siEased * maxYaw : centring;
+  if (airborne) yawTarget *= 0.35;
   P.yaw = damp(P.yaw, yawTarget, (4.5 + sens * 3) * car.steer, dt);
   const lat = P.yaw * v, grip = (8.4 + sens * 1.6) * car.grip;
   P.slip = clamp((Math.abs(lat) - 7.2) / 2.4, 0, 1);
@@ -2586,11 +2715,13 @@ function updatePlayer(dt, autopilot) {
   P.lat = damp(P.lat, P.yaw * v, 6, dt);
   // longitudinal
   const m = 1520, power = car.power;
-  const drive = P.throttle * Math.min(m * (5.4 + power / 1.2e6), power / Math.max(v, 3));
+  const drive = airborne ? 0 : P.throttle * Math.min(m * (5.4 + power / 1.2e6), power / Math.max(v, 3));
   const drag = car.drag * v * v, rollR = m * 9.81 * 0.013, engBrake = (1 - P.throttle) * m * 0.55;
-  const brakeF = brk * m * (12.5 + Math.min(v, 80) * 0.035) * car.brake;
+  const brakeF = (airborne ? 0 : brk) * m * (12.5 + Math.min(v, 80) * 0.035) * car.brake;
   let a = (drive - drag - rollR - engBrake - brakeF) / m - Math.abs(lat) * 0.025 - 9.81 * HILL.slope;
-  P.v = clamp(P.v + a * dt, 0, car.top);
+  const boost = mode === 'stunt' && STUNT.boosting;
+  if (boost) a += 15;
+  P.v = clamp(P.v + a * dt, 0, boost ? car.top * 1.22 : Math.max(car.top, P.v - 10 * dt)); // nitro lifts the limiter; the extra speed bleeds off afterwards
   P.lon = damp(P.lon, a, 5, dt);
   P.braking = !!brk;
   // gears & rpm
@@ -2628,6 +2759,10 @@ function checkCollisions() {
     if (c.z > 900) continue;
     const cw = c.veh.W / 2 + Math.abs(Math.sin(c.yaw)) * c.veh.L / 2, cl = c.veh.L / 2;
     const dx = P.x - c.x, ox = hw + cw - 0.05 - Math.abs(dx), oz = hl + cl - 0.05 - Math.abs(c.z);
+    if (ox > 0 && oz > 0 && P.y > (c.kind === 'semi' ? 4.1 : 1.55)) { // flying over it
+      if (!(P.clock - (c.jumpT ?? -9) < 3)) { c.jumpT = P.clock; STUNT.cleared++; }
+      continue;
+    }
     if (ox > 0 && oz > 0 && !c.crashed) {
       const toward = Math.max(0, -Math.sign(dx) * vlat); // how fast you were steering into it
       if (ox < oz && ox < 0.55 && toward < 7) { sideSwipe(c, dx, ox, toward, 1); continue; }
@@ -2643,6 +2778,7 @@ function checkCollisions() {
   }
   if (divided) return;
   for (const o of oncoming) {
+    if (P.y > (o.kind === 'semi' ? 4.1 : 1.55)) continue;
     const dx = P.x - o.x, ox = hw + o.veh.W / 2 - 0.05 - Math.abs(dx), oz = hl + o.veh.L / 2 - 0.05 - Math.abs(o.z);
     if (ox > 0 && oz > 0 && !o.crashed && ox < oz && ox < 0.35 && Math.max(0, -Math.sign(dx) * vlat) < 5) { sideSwipe(o, dx, ox, 3, 1.6); continue; }
     if (ox > 0 && oz > 0) {
@@ -2725,14 +2861,16 @@ function updateCamera(dt, rdt) {
   } else if (cm === 0) {
     const back = 6.2 + Math.min(sp, 90) * 0.022, height = 2.05 + Math.min(sp, 90) * 0.004;
     const head = P.h * 0.55;
-    tmpV.set(P.x - Math.sin(head) * back, height, Math.cos(head) * back);
+    tmpV.set(P.x - Math.sin(head) * back, height + P.y * 0.8, Math.cos(head) * back);
     camPos.x = damp(camPos.x, tmpV.x, 7, rdt); camPos.y = damp(camPos.y, tmpV.y, 5, rdt); camPos.z = damp(camPos.z, tmpV.z, 4, rdt);
     camera.position.copy(camPos);
-    camLook.set(P.x + Math.sin(head) * 12, 0.95, -12);
+    camLook.set(P.x + Math.sin(head) * 12, 0.95 + P.y * 0.9, -12);
   } else {
     rig.updateMatrixWorld();
-    camera.position.copy(player.group.localToWorld(tmpV.set(0, 1.08, 0.15)));
-    camLook.copy(player.group.localToWorld(tmpV.set(0, 0.9, -30)));
+    // driver's seat: the eye point is set per car in buildCockpit
+    const e = player.eye;
+    camera.position.copy(player.group.localToWorld(tmpV.set(e[0], e[1], e[2] + clamp(P.lon * 0.003, -0.03, 0.03))));
+    camLook.copy(player.group.localToWorld(tmpV.set(e[0] * 0.7, e[1] - 0.12, -30)));
   }
   const s = REDUCED ? 0 : Math.pow(clamp(sp / 140, 0, 1), 2) * 0.024 + shake * 0.25;
   const t = performance.now() * 0.001;
@@ -2743,7 +2881,7 @@ function updateCamera(dt, rdt) {
   const ol = hillOffset(camLook.z); camLook.x += ol[0]; camLook.y += ol[1];
   camera.lookAt(camLook);
   if (cm === 1) camera.rotation.z += -P.roll * 0.6;
-  const fov = cm === 0 ? 56 + clamp(sp, 0, 145) * 0.13 : 64 + clamp(sp, 0, 145) * 0.08;
+  const fov = (cm === 0 ? 56 + clamp(sp, 0, 145) * 0.13 : 66 + clamp(sp, 0, 145) * 0.07) + (mode === 'stunt' && STUNT.boosting ? 7 : 0);
   camera.fov = damp(camera.fov, fov, 3, rdt); camera.updateProjectionMatrix();
   shake = Math.max(0, shake - rdt * 1.6);
 }
@@ -2848,6 +2986,161 @@ function updateHud(now) {
 }
 
 // ======================================================================
+// Rewind: R jumps the whole run back 7 seconds
+// ======================================================================
+const REWIND_S = 7, hist = [];
+let histT = 0;
+const plain = (c) => { const o = {}; for (const k in c) { const v = c[k]; if (v === null || typeof v !== 'object') o[k] = v; else if (k === 'change') o[k] = { ...v }; } return o; };
+function snapshot() {
+  return { P: { ...P }, DIFF: { ...DIFF }, RUSH: { ...RUSH }, PUR: { ...PUR }, ST: stuntSnap(),
+    traffic: traffic.map((c) => Object.assign(plain(c), { _vis: c.veh.group.visible, _col: c.veh.paint.color.getHex(), _met: c.veh.paint.metalness })),
+    oncoming: oncoming.map((o) => Object.assign(plain(o), { _rot: o.veh.group.rotation.y, _vis: o.veh.group.visible })),
+    cops: cops.map((c) => Object.assign(plain(c), { _vis: c.veh.group.visible })) };
+}
+function restore(s) {
+  const put = (c, o) => { for (const k in o) if (k[0] !== '_') c[k] = o[k] && typeof o[k] === 'object' ? { ...o[k] } : o[k]; c.veh.group.visible = o._vis; };
+  for (const k in P) delete P[k];
+  Object.assign(P, s.P); Object.assign(DIFF, s.DIFF); Object.assign(RUSH, s.RUSH); Object.assign(PUR, s.PUR); stuntRestore(s.ST);
+  traffic.forEach((c, i) => { const o = s.traffic[i]; put(c, o); c.veh.paint.color.setHex(o._col); c.veh.paint.metalness = o._met; });
+  oncoming.forEach((c, i) => { put(c, s.oncoming[i]); c.veh.group.rotation.y = s.oncoming[i]._rot; });
+  cops.forEach((c, i) => put(c, s.cops[i]));
+}
+function recordHistory(dt) {
+  histT += dt; if (histT < 0.1) return;
+  histT = 0; hist.push(snapshot());
+  if (hist.length > REWIND_S * 10 + 1) hist.shift();
+}
+function rewind() {
+  if (state !== 'play' || !hist.length) return;
+  const s = hist[0], secs = Math.min(REWIND_S, Math.round((hist.length - 1) / 10));
+  restore(s); hist.length = 0; hist.push(s); histT = 0;
+  slowmo = 0; shake = 0;
+  camPos.set(P.x, 2.3, 7);
+  const fl = $('flash'); fl.style.transition = 'none'; fl.style.opacity = 0.5; requestAnimationFrame(() => { fl.style.transition = 'opacity .5s'; fl.style.opacity = 0; });
+  $('pops').innerHTML = ''; popup('REWIND', secs >= REWIND_S ? 'Back 7 seconds' : 'Back to the start of the run');
+  Sound.ding();
+}
+
+// ======================================================================
+// Stunt run: jump ramps on the right shoulder and nitro pickups
+// ======================================================================
+const STUNT = { nitro: 0.5, boosting: false, airT: 0, airDist: 0, cleared: 0, onRamp: false, pitch: 0, nextRamp: 0, nextPick: 0, bestAir: 0, jumps: 0, tip: false };
+const RAMP = { L: 11, W: 3.2, H: 1.7, x: 18.0 };
+const ramps = [], pickups = [];
+{
+  const [tc, tg] = makeCanvas(128, 512);
+  tg.fillStyle = '#26292e'; tg.fillRect(0, 0, 128, 512);
+  tg.strokeStyle = '#f5b524'; tg.lineWidth = 16; tg.lineJoin = 'miter';
+  for (let y = 70; y < 520; y += 110) { tg.beginPath(); tg.moveTo(18, y); tg.lineTo(64, y - 48); tg.lineTo(110, y); tg.stroke(); }
+  tg.fillStyle = '#f3f2ec'; tg.fillRect(0, 0, 6, 512); tg.fillRect(122, 0, 6, 512); tg.fillStyle = '#f5b524'; tg.fillRect(0, 0, 128, 14);
+  const [sc, sg] = makeCanvas(64, 64);
+  sg.fillStyle = '#f5b524'; sg.fillRect(0, 0, 64, 64); sg.fillStyle = '#17181b'; sg.beginPath(); sg.moveTo(0, 64); sg.lineTo(32, 0); sg.lineTo(64, 0); sg.lineTo(32, 64); sg.fill(); sg.beginPath(); sg.moveTo(-32, 64); sg.lineTo(0, 0); sg.lineTo(0, 64); sg.fill(); sg.beginPath(); sg.moveTo(64, 64); sg.lineTo(64, 0); sg.lineTo(96, 0); sg.fill();
+  const topTex = canvasTex(tc, true, false), sideTex = canvasTex(sc, true, true);
+  const topMat = new THREE.MeshStandardMaterial({ map: topTex, roughness: 0.7, emissive: 0xffffff, emissiveMap: topTex, emissiveIntensity: 0.12 });
+  const sideMat = new THREE.MeshStandardMaterial({ map: sideTex, roughness: 0.6, side: THREE.DoubleSide });
+  const hyp = Math.hypot(RAMP.L, RAMP.H), ang = Math.atan2(RAMP.H, RAMP.L);
+  const tri = new THREE.Shape(); tri.moveTo(0, 0); tri.lineTo(RAMP.L, 0); tri.lineTo(RAMP.L, RAMP.H); tri.lineTo(0, 0);
+  for (let i = 0; i < 3; i++) {
+    const g = new THREE.Group();
+    const top = new THREE.Mesh(new THREE.PlaneGeometry(RAMP.W, hyp), topMat); top.rotation.x = -Math.PI / 2 + ang; top.position.set(0, RAMP.H / 2 + 0.01, -RAMP.L / 2); top.receiveShadow = true;
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(RAMP.W, RAMP.H), sideMat); back.rotation.y = Math.PI; back.position.set(0, RAMP.H / 2, -RAMP.L);
+    g.add(top, back);
+    for (const sx of [-1, 1]) { const s = new THREE.Mesh(new THREE.ShapeGeometry(tri).rotateY(Math.PI / 2).translate(sx * RAMP.W / 2, 0, 0), sideMat); s.castShadow = true; g.add(s); }
+    g.visible = false; scene.add(g); ramps.push({ g, x: RAMP.x, z: 9999, on: false, used: false });
+  }
+  const canMat = new THREE.MeshStandardMaterial({ color: 0x0f6fd0, metalness: 0.6, roughness: 0.25, emissive: 0x1e9bff, emissiveIntensity: 1.3 });
+  const glowMat = new THREE.SpriteMaterial({ map: glowTex, color: 0x39b8ff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.9 });
+  for (let i = 0; i < 8; i++) {
+    const g = new THREE.Group();
+    const can = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.62, 16), canMat); can.rotation.z = 0.5;
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.2, 0.14, 16).translate(0, 0.38, 0), MAT.chrome); cap.rotation.z = 0.5;
+    const sp = new THREE.Sprite(glowMat); sp.scale.setScalar(2.6);
+    g.add(can, cap, sp); g.visible = false; scene.add(g); pickups.push({ g, x: 0, y: 0, z: 9999, on: false });
+  }
+}
+const nitroFlames = [-0.28, 0.28].map((x) => {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x5cc4ff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.95 }));
+  s.position.set(x, 0.42 - RIG_Y, 2.7); s.visible = false; rig.add(s); return s;
+});
+function resetStunt() {
+  Object.assign(STUNT, { nitro: 0.5, boosting: false, airT: 0, airDist: 0, cleared: 0, onRamp: false, pitch: 0, nextRamp: 260, nextPick: 120, bestAir: 0, jumps: 0, tip: false });
+  for (const r of ramps) { r.on = false; r.used = false; r.z = 9999; r.g.visible = false; }
+  for (const p of pickups) { p.on = false; p.z = 9999; p.g.visible = false; }
+  for (const f of nitroFlames) f.visible = false;
+}
+const stuntSnap = () => ({ S: { ...STUNT }, ramps: ramps.map((r) => ({ z: r.z, on: r.on, used: r.used })), picks: pickups.map((p) => ({ x: p.x, y: p.y, z: p.z, on: p.on })) });
+function stuntRestore(s) {
+  Object.assign(STUNT, s.S);
+  ramps.forEach((r, i) => { Object.assign(r, s.ramps[i]); r.g.visible = r.on; r.g.position.set(r.x, 0, r.z); });
+  pickups.forEach((p, i) => { Object.assign(p, s.picks[i]); p.g.visible = p.on; });
+}
+function updateStunt(dt) {
+  const fwd = P.fwd;
+  if (P.dist > STUNT.nextRamp) {
+    const r = ramps.find((q) => !q.on);
+    if (r) {
+      r.on = true; r.used = false; r.z = -760; r.g.visible = true;
+      const p = pickups.find((q) => !q.on); // a reward hanging in the air beyond the lip
+      if (p) Object.assign(p, { on: true, x: RAMP.x - 1.0, y: 3.3, z: r.z - RAMP.L - 30 });
+    }
+    STUNT.nextRamp = P.dist + rand(420, 700);
+  }
+  if (P.dist > STUNT.nextPick) {
+    const p = pickups.find((q) => !q.on);
+    if (p) Object.assign(p, { on: true, x: [5.5, 9.2, 12.9, 3.65, 14.75][(Math.random() * 5) | 0], y: 0.95, z: -780 });
+    STUNT.nextPick = P.dist + rand(170, 330);
+  }
+  STUNT.onRamp = false;
+  for (const r of ramps) {
+    if (!r.on) continue;
+    r.z += fwd * dt;
+    if (r.z > 80) { r.on = false; r.g.visible = false; continue; }
+    r.g.position.set(r.x, 0, r.z);
+    if (!STUNT.tip && r.z > -260) { STUNT.tip = true; popup('RAMP AHEAD', 'Pull onto the right shoulder to jump it'); }
+    if (P.crashed) continue;
+    const t = r.z / RAMP.L, dx = P.x - r.x, surf = t * RAMP.H; // t runs 0 at the foot to 1 at the lip
+    if (t > 0 && t < 1) {
+      if (Math.abs(dx) < RAMP.W / 2 - 0.2 && P.y <= surf + 0.3) { P.y = surf; P.vy = 0; STUNT.onRamp = true; r.used = true; }
+      else if (Math.abs(dx) < RAMP.W / 2 + 0.95 && P.y < surf - 0.35) { // clipped the side of the ramp
+        P.x = r.x + Math.sign(dx || -1) * (RAMP.W / 2 + 0.97); P.h *= 0.4; P.v *= Math.pow(0.5, dt * 5); P.scrape = 1;
+        shake = Math.max(shake, 0.3); emitSparks(P.x - Math.sign(dx) * 0.9, 0.5, 0, 6, fwd * 0.3);
+      }
+    } else if (t >= 1 && r.used) {
+      r.used = false;
+      if (P.y > 0.6) { P.vy = Math.min(15, fwd * (RAMP.H / RAMP.L) * 0.95); STUNT.airT = 0; STUNT.airDist = 0; STUNT.cleared = 0; STUNT.jumps++; Sound.burst(0.3, 'highpass', 900, 0.4); }
+    }
+  }
+  for (const p of pickups) {
+    if (!p.on) continue;
+    p.z += fwd * dt;
+    if (p.z > 40) { p.on = false; p.g.visible = false; continue; }
+    p.g.visible = true; p.g.position.set(p.x, p.y + Math.sin(performance.now() * 0.004 + p.x) * 0.12, p.z); p.g.rotation.y += dt * 3;
+    if (!P.crashed && Math.abs(p.z) < 2.8 && Math.abs(p.x - P.x) < 1.7 && Math.abs(p.y - (P.y + 0.7)) < 1.8) {
+      p.on = false; p.g.visible = false; STUNT.nitro = Math.min(1, STUNT.nitro + 0.34); P.score += 250;
+      popup('NITRO +34%', 'Hold Shift to boost · +250'); Sound.ding();
+    }
+  }
+  const air = !P.crashed && P.y > 0.05 && !STUNT.onRamp;
+  if (air) { STUNT.airT += dt; STUNT.airDist += fwd * dt; }
+  const want = !!(keys.ShiftLeft || keys.ShiftRight || keys.KeyN || touch.n) && !P.crashed && STUNT.nitro > 0 && state === 'play';
+  if (want && !STUNT.boosting) Sound.burst(0.5, 'bandpass', 1400, 0.5);
+  STUNT.boosting = want;
+  if (want) STUNT.nitro = Math.max(0, STUNT.nitro - dt * 0.2);
+  STUNT.pitch = damp(STUNT.pitch, STUNT.onRamp ? Math.atan2(RAMP.H, RAMP.L) : air ? clamp(Math.atan2(P.vy, Math.max(fwd, 10)) * 0.9, -0.3, 0.3) : 0, 10, dt);
+}
+// The car touches down after a jump.
+function stuntLand() {
+  const impact = -P.vy; P.y = 0; P.vy = 0;
+  if (STUNT.airT > 0.35) {
+    const m = Math.round(STUNT.airDist), pts = Math.round((m * 6 + STUNT.cleared * 400) * paceMult(P.fwd * MPH));
+    P.score += pts; STUNT.bestAir = Math.max(STUNT.bestAir, m);
+    popup(STUNT.cleared ? 'OVER THE TOP' : m > 70 ? 'HUGE AIR' : 'AIR', `${m} m${STUNT.cleared ? ` · ${STUNT.cleared} car${STUNT.cleared > 1 ? 's' : ''} cleared` : ''} · +${pts.toLocaleString('en-US')}`);
+  }
+  if (impact > 3) { shake = Math.max(shake, 0.25 + impact * 0.04); emitSparks(P.x, 0.2, 0, 14, P.fwd * 0.3); P.v *= 0.985; Sound.burst(0.25, 'lowpass', 420, Math.min(0.8, 0.2 + impact * 0.05)); }
+  STUNT.airT = 0; STUNT.airDist = 0; STUNT.cleared = 0;
+}
+
+// ======================================================================
 // Main loop
 // ======================================================================
 function resize() {
@@ -2872,8 +3165,10 @@ function frame(now) {
     updatePlayer(h, state !== 'play');
     updateTraffic(h, P.fwd);
     if (mode === 'pursuit' && state !== 'menu') updateCops(h, P.fwd);
+    if (mode === 'stunt' && state !== 'menu') updateStunt(h);
     if (state === 'play') { checkCollisions(); if (mode === 'pursuit') checkCopHits(); }
   }
+  if (state === 'play') recordHistory(dt);
   if (mode === 'pursuit' && state === 'play' && !P.crashed) updatePursuitRules(dt);
   flashCops(now);
   if (state === 'play') {
@@ -2908,7 +3203,7 @@ function frame(now) {
   updateSmoke(dt, P.fwd);
   // player transforms
   rig.position.set(P.x, RIG_Y + P.y, 0);
-  rig.rotation.set(P.crashed ? P.cPitch : 0, -P.h, P.crashed ? P.cRoll : 0);
+  rig.rotation.set(P.crashed ? P.cPitch : STUNT.pitch, -P.h, P.crashed ? P.cRoll : 0);
   player.contact.visible = P.y < 0.3 && Math.cos(P.cRoll) > 0.5;
   if (player.underglow) player.underglow.opacity = player.contact.visible ? 0.35 + LIGHTS * 0.5 : 0;
   updateDebris(dt, P.fwd);
@@ -2926,6 +3221,10 @@ function frame(now) {
   player.tail.emissiveIntensity = braking ? 4.2 : 0.25 + LIGHTS * 1.6;
   player.tailGlowMat.opacity = braking ? 0.55 + LIGHTS * 0.4 : LIGHTS * 0.55;
   player.body.visible = camMode === 0 || state === 'menu' || P.crashed;
+  player.cab.visible = !player.body.visible; // the interior replaces the outside body in the driver's-seat view
+  if (player.cab.visible) { player.cab.rotation.copy(player.body.rotation); player.cab.position.y = player.body.position.y; player.steer.rotation.z = -P.si * 1.7; drawCluster(now); }
+  for (const f of nitroFlames) { f.visible = mode === 'stunt' && STUNT.boosting && !P.crashed; if (f.visible) f.scale.setScalar(0.9 + Math.random() * 0.8); }
+  if (mode === 'stunt' && state === 'play') { $('hNitro').style.width = (STUNT.nitro * 100).toFixed(0) + '%'; $('hAir').textContent = `BEST AIR ${STUNT.bestAir} m`; }
   // sun follows the player so the shadow map stays sharp
   const sd = skyUniforms.sunDir.value;
   sun.target.position.set(P.x, 0, -14);
@@ -2952,6 +3251,7 @@ resetTraffic();
 applyDivider();
 renderTerrain();
 renderDifficulty();
+renderTraffic();
 patchHill(scene);
 renderMenu();
 const redrawSigns = () => { fontsReady = true; for (const gt of gantries) gt.n = -1; for (const m of markers) m.n = -1; logoTextures.forEach((lt, i) => {
