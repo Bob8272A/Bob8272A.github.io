@@ -403,6 +403,7 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px;margin:0}
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
 <script>window.THREE || document.write('<script src="https://unpkg.com/three@0.159.0/build/three.min.js"><\/script>');</script>
+<script src="or1-hypercar-model.js"></script>
 <script>
 (function () {
 'use strict';
@@ -1220,7 +1221,10 @@ function kindGeo(kind, separateWheels) {
   const P = { paint: [], glass: [], trim: [], chrome: [], rubber: [], rim: [], head: [], tail: [], plate: [], sigL: [], sigR: [], trailer: [], accent: [], led: [] };
   let out;
   if (kind === 'semi') out = semiGeo(P, separateWheels);
-  else {
+  else if (kind === 'or1') { // OR-1 hypercar: detailed model from or1-hypercar-model.js
+    const m = buildHypercar(THREE);
+    out = { L: m.spec.L, W: m.spec.W, wr: m.spec.wr, wheels: m.spec.wheels, tireW: m.spec.tireW, tail: m.tail, head: m.head, or1: m.parts };
+  } else {
     const s = SPECS[kind], W = s.W;
     P.paint.push(extrudeProfile(s.body, W, { t: 0.09, s: 0.06, n: 3 }, { wheels: s.wheels, wr: s.wr, clear: s.clear }));
     for (const sh of s.shells) P[sh.mat].push(extrudeProfile(sh.pts, W * sh.w, { t: 0.07, s: 0.035, n: 2 }));
@@ -1246,6 +1250,7 @@ function kindGeo(kind, separateWheels) {
   }
   out.parts = {};
   for (const k in P) if (P[k].length) out.parts[k] = merge(P[k]);
+  if (out.or1) Object.assign(out.parts, out.or1);
   return (geoCache[key] = out);
 }
 function semiGeo(P) {
@@ -1332,7 +1337,15 @@ function createVehicle(kind, paintDef, opts = {}) {
     const ug = new THREE.Mesh(planeFlat, ugMat); ug.scale.set(G.W * 1.9, 1, G.L * 1.25); ug.position.y = 0.025; ug.renderOrder = 2;
     group.add(ug); veh.underglow = ugMat;
   }
-  if (opts.separateWheels) {
+  if (opts.separateWheels && kind === 'or1') { // the OR-1 brings its own detailed wheels
+    const wg = buildHypercarWheel(THREE, G), wm = { rubber: MAT.rubber, rim: rimMat, chrome: MAT.chrome, caliper: MAT.caliper, trim: MAT.trim };
+    for (const w of G.wheels) for (const sx of [-1, 1]) {
+      const pivot = new THREE.Group(); pivot.position.set(sx * (G.W / 2 - G.tireW / 2 - 0.02), G.wr, -w);
+      const spin = new THREE.Group(); pivot.add(spin);
+      for (const k in wg) { const m = new THREE.Mesh(wg[k], wm[k]); m.castShadow = k === 'rubber'; if (sx < 0) m.rotation.y = Math.PI; (k === 'caliper' ? pivot : spin).add(m); }
+      group.add(pivot); veh.wheels.push({ pivot, spin, front: w > 0 });
+    }
+  } else if (opts.separateWheels) {
     const s = SPECS[kind];
     const tireGeo = creased(merge([new THREE.CylinderGeometry(s.wr, s.wr, s.tireW * 0.8, 36), new THREE.TorusGeometry(s.wr - 0.05, 0.05, 8, 36).rotateX(Math.PI / 2).translate(0, s.tireW * 0.38, 0), new THREE.TorusGeometry(s.wr - 0.05, 0.05, 8, 36).rotateX(Math.PI / 2).translate(0, -s.tireW * 0.38, 0)]), 0.9);
     const spokes = [new THREE.CylinderGeometry(s.wr * 0.66, s.wr * 0.66, 0.03, 32).translate(0, s.tireW * 0.36, 0)];
@@ -1367,6 +1380,7 @@ let paintIdx = 0;
 // Garage: each car has its own body, top speed (m/s), power (W), grip and unlock cost in career points.
 const CARS = [
   { id: 'vanta', name: 'Vanta GT', kind: 'sport', top: 125, power: 0.8e6, grip: 1.0, steer: 1.0, brake: 1.0, unlock: 0, rim: 0xa9afb5, accent: 0x101113, led: 0xff2a1a, glow: null, blurb: 'Balanced starter coupe' },
+  { id: 'or1', name: 'OR-1', kind: 'or1', top: 125, power: 0.8e6, grip: 1.0, steer: 1.0, brake: 1.0, unlock: 0, rim: 0x2a2d31, accent: 0x111214, led: 0xff2a1a, glow: null, blurb: 'Hand-sculpted hypercar with a glass canopy, rear wing and full aero' },
   { id: 'strada', name: 'Strada R', kind: 'muscle', top: 133, power: 1.1e6, grip: 1.06, steer: 1.07, brake: 1.1, unlock: 25000, rim: 0x18191b, accent: 0xf2f2ee, led: 0xff2a1a, glow: 0xff5a1a, blurb: 'Muscle car with a hood scoop and twin stripes' },
   { id: 'kestrel', name: 'Kestrel V12', kind: 'wedge', top: 145, power: 1.45e6, grip: 1.15, steer: 1.16, brake: 1.22, unlock: 75000, rim: 0x202124, accent: 0xf5b524, led: 0xffffff, glow: 0x22d3ff, blurb: 'Wedge supercar with a big rear wing' },
   { id: 'phantom', name: 'Phantom EV', kind: 'ev', top: 152, power: 2.0e6, grip: 1.22, steer: 1.25, brake: 1.32, unlock: 175000, rim: 0xd2d6da, accent: 0x7ff0ff, led: 0x7ff0ff, glow: 0x8a4dff, blurb: 'Electric with violent acceleration and light-blade sills' },
