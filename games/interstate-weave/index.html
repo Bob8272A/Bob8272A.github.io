@@ -79,6 +79,9 @@ button:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
 .best{font-family:var(--mono);font-size:12px;color:var(--muted);background:var(--panel);padding:5px 10px;border-radius:6px;letter-spacing:.04em}
 .combo{background:var(--amber);color:#1b1404;font-weight:900;font-size:15px;padding:6px 12px;border-radius:6px;letter-spacing:.06em;transform-origin:right center;transition:transform .15s}
 .combo.bump{transform:scale(1.15)}
+.ind{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);display:flex;gap:56px;pointer-events:none;z-index:5}
+.ind i{font-style:normal;font-size:30px;line-height:1;color:#4a3a1a;transition:color .05s,text-shadow .05s}
+.ind i.on{color:#ff9410;text-shadow:0 0 12px #ff9410}
 .cluster{position:absolute;right:calc(14px + env(safe-area-inset-right,0px));bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;align-items:flex-end;gap:12px}
 .limit{background:var(--paper);color:#111;border-radius:6px;padding:3px;box-shadow:0 6px 20px rgba(0,0,0,.35);text-align:center}
 .limit-in{border:2px solid #111;border-radius:4px;padding:5px 9px 4px;display:grid;line-height:1}
@@ -222,6 +225,7 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px;margin:0}
       </div>
       <div class="combo" id="hCombo" hidden>×2 CLOSE CALLS</div>
     </div>
+    <div class="ind" id="hInd" hidden aria-hidden="true"><i id="indL">◀</i><i id="indR">▶</i></div>
     <div class="pops" id="pops"></div>
     <div class="cluster">
       <div>
@@ -232,7 +236,7 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px;margin:0}
     </div>
     <div class="hint" id="hint">
       <kbd>W</kbd>/<kbd>↑</kbd> gas &nbsp; <kbd>S</kbd>/<kbd>↓</kbd> brake &nbsp; <kbd>A</kbd><kbd>D</kbd> steer<br>
-      <kbd>C</kbd> camera &nbsp; <kbd>R</kbd> rewind 7 s &nbsp; <kbd>M</kbd> sound &nbsp; <kbd>P</kbd> pause
+      <kbd>C</kbd> camera &nbsp; <kbd>Q</kbd> <kbd>E</kbd> indicators &nbsp; <kbd>R</kbd> rewind 7 s &nbsp; <kbd>M</kbd> sound &nbsp; <kbd>P</kbd> pause
     </div>
     <div class="touch" id="touch">
       <div class="grp"><button data-k="l" aria-label="Steer left">◀</button><button data-k="r" aria-label="Steer right">▶</button></div>
@@ -1410,6 +1414,8 @@ function drawCluster(now) {
   g.textAlign = 'center'; g.fillStyle = '#f3f2ec'; g.font = '900 62px Overpass, Arial, sans-serif'; g.fillText(String(Math.round(P.fwd * MPH)), 112, 104);
   g.fillStyle = '#9aa4ab'; g.font = '700 15px Arial, sans-serif'; g.fillText('MPH', 196, 102);
   g.fillStyle = '#f5b524'; g.font = '900 28px Overpass, Arial, sans-serif'; g.fillText(P.crashed ? 'N' : 'D' + (P.gear + 1), 216, 76);
+  { const ph = (now % 700) < 380; g.fillStyle = IND.dir < 0 && ph ? '#2bff6a' : '#16241a'; g.beginPath(); g.moveTo(8, 12); g.lineTo(26, 3); g.lineTo(26, 21); g.fill();
+    g.fillStyle = IND.dir > 0 && ph ? '#2bff6a' : '#16241a'; g.beginPath(); g.moveTo(248, 12); g.lineTo(230, 3); g.lineTo(230, 21); g.fill(); }
   if (mode === 'stunt') { g.fillStyle = '#1a2026'; g.fillRect(14, 114, 228, 7); g.fillStyle = '#39b8ff'; g.fillRect(14, 114, 228 * STUNT.nitro, 7); }
   clusterMat.map.needsUpdate = true;
 }
@@ -2303,6 +2309,7 @@ addEventListener('keydown', (e) => {
   if (e.repeat) return;
   if (e.code === 'KeyC' && state !== 'menu') camMode = 1 - camMode;
   if (e.code === 'KeyR') rewind();
+  if ((e.code === 'KeyQ' || e.code === 'KeyE') && state === 'play') { const d = e.code === 'KeyQ' ? -1 : 1; IND.dir = IND.dir === d ? 0 : d; IND.tick = -1; }
   if (e.code === 'KeyM') toggleMute();
   if (e.code === 'Escape' && !$('settings').hidden) { closeSettings(); return; }
   if ((e.code === 'KeyP' || e.code === 'Escape') && (state === 'play' || state === 'paused')) togglePause();
@@ -2551,7 +2558,7 @@ function startGame() {
   Sound.init(); Music.start();
   LV = mode === 'levels' ? LEVELS[selLevel - 1] : null;
   setDiff(LV || (mode === 'rush' ? rushDiff(0) : endlessDiff(0)));
-  resetPlayer(); resetTraffic(); resetPursuit(); resetRush(); resetStunt(); hist.length = 0; histT = 0;
+  IND.dir = 0; resetPlayer(); resetTraffic(); resetPursuit(); resetRush(); resetStunt(); hist.length = 0; histT = 0;
   $('menu').hidden = true; $('over').hidden = true; $('clear').hidden = true; $('pause').hidden = true; $('hud').hidden = false;
   $('hLvl').hidden = !LV; $('pops').innerHTML = '';
   $('hPur').hidden = $('radar').hidden = mode !== 'pursuit';
@@ -3002,6 +3009,7 @@ function updateHud(now) {
 // ======================================================================
 const REWIND_S = 7, hist = [];
 let histT = 0;
+const IND = { dir: 0, tick: -1 }; // turn indicators: -1 left, 1 right, 0 off (Q / E toggle)
 const plain = (c) => { const o = {}; for (const k in c) { const v = c[k]; if (v === null || typeof v !== 'object') o[k] = v; else if (k === 'change') o[k] = { ...v }; } return o; };
 function snapshot() {
   return { P: { ...P }, DIFF: { ...DIFF }, RUSH: { ...RUSH }, PUR: { ...PUR }, ST: stuntSnap(),
@@ -3232,6 +3240,10 @@ function frame(now) {
   const braking = P.braking || P.crashed;
   player.tail.emissiveIntensity = braking ? 4.2 : 0.25 + LIGHTS * 1.6;
   player.tailGlowMat.opacity = braking ? 0.55 + LIGHTS * 0.4 : LIGHTS * 0.55;
+  { const on = IND.dir !== 0 && state !== 'menu', ph = (now % 700) < 380;
+    player.sigL.emissiveIntensity = on && IND.dir < 0 && ph ? 3 : 0; player.sigR.emissiveIntensity = on && IND.dir > 0 && ph ? 3 : 0;
+    if (on && state === 'play' && IND.tick !== ph) { IND.tick = ph; Sound.burst(0.03, 'highpass', ph ? 2200 : 1600, 0.35); }
+    $('hInd').hidden = !on; $('indL').classList.toggle('on', on && IND.dir < 0 && ph); $('indR').classList.toggle('on', on && IND.dir > 0 && ph); }
   player.body.visible = camMode === 0 || state === 'menu' || P.crashed;
   player.cab.visible = !player.body.visible; // the interior replaces the outside body in the driver's-seat view
   if (player.cab.visible) { player.cab.rotation.copy(player.body.rotation); player.cab.position.y = player.body.position.y; player.steer.rotation.z = -P.si * 1.7; drawCluster(now); }
