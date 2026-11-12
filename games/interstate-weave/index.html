@@ -98,6 +98,14 @@ button:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
 .hint{position:absolute;left:calc(16px + env(safe-area-inset-left,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));font-family:var(--mono);font-size:12px;color:var(--muted);background:var(--panel);padding:8px 10px;border-radius:6px;line-height:1.6;transition:opacity 1s}
 .hint kbd{font-family:var(--mono);color:var(--paper);border:1px solid rgba(255,255,255,.3);border-radius:3px;padding:0 4px}
 .flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+.rewfx{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:4;background:repeating-linear-gradient(0deg,rgba(120,190,255,.10) 0 2px,rgba(0,0,0,0) 2px 5px),radial-gradient(ellipse at center,rgba(40,90,170,.10) 35%,rgba(10,30,70,.55) 100%);mix-blend-mode:normal;animation:rewjit .11s steps(2) infinite}
+.rewbar{position:absolute;left:0;right:0;height:14%;background:linear-gradient(180deg,rgba(255,255,255,0),rgba(190,225,255,.22),rgba(255,255,255,0));animation:rewbar .55s linear infinite}
+.rewlbl{position:absolute;left:50%;top:16%;transform:translateX(-50%);display:grid;justify-items:center;gap:2px;color:#cfe8ff;text-shadow:0 0 14px rgba(120,190,255,.9)}
+.rewlbl b{font-size:34px;font-weight:900;letter-spacing:.14em}
+.rewlbl span{font-family:var(--mono);font-size:18px;font-weight:700}
+@keyframes rewbar{from{top:-16%}to{top:104%}}
+@keyframes rewjit{0%{transform:translate(0,0)}50%{transform:translate(1px,-1px)}100%{transform:translate(-1px,1px)}}
+@media (prefers-reduced-motion:reduce){ .rewfx,.rewbar{animation:none} }
 
 /* ---------- Overlays ---------- */
 .overlay{position:absolute;inset:0;display:grid;place-items:center;padding:16px;overflow:auto;
@@ -244,6 +252,7 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px;margin:0}
     </div>
   </div>
   <div class="flash" id="flash"></div>
+  <div class="rewfx" id="rewFx" hidden aria-hidden="true"><div class="rewbar"></div><div class="rewlbl"><b>◀◀ REWIND</b><span id="rewSec">-0.0 s</span></div></div>
 
   <div class="overlay" id="menu">
     <div class="guide"><div class="guide-in">
@@ -393,6 +402,7 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px;margin:0}
         <div class="scale"><span>Smooth</span><span>Twitchy</span></div>
       </div>
       <label class="check" for="setCenter"><input type="checkbox" id="setCenter" checked> Auto-straighten when you let go of steering</label>
+      <label class="check" for="setRewFx"><input type="checkbox" id="setRewFx" checked> Rewind animation (tape-style scrub back through the run)</label>
       <label class="check" for="setSwipe"><input type="checkbox" id="setSwipe"> Side-swipes can't wreck my car (damage stops at 99%)</label>
       <div class="field">
         <span class="field-label" id="trackLabel">Music</span>
@@ -424,6 +434,8 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px;margin:0}
 <script>
 (function () {
 'use strict';
+const IND = { dir: 0, tick: -1, t: 0 }; // turn indicators: -1 left, 1 right, 0 off (Q / E toggle)
+let rew = null; // active rewind animation: { t, dur, n, secs }
 const $ = (id) => document.getElementById(id);
 if (!window.THREE) { $('err').hidden = false; return; }
 
@@ -1584,7 +1596,7 @@ function spawnCar(c, where) {
     if (where === 'init' && Math.abs(LANES[lane] - P.x) < 2.5 && z > -60) continue;
     if (!laneFree(lane, z, c.veh.L, c, DIFF.pad)) continue;
     c.lane = lane; c.x = LANES[lane]; c.z = z; c.desired = laneSpeed(lane, c.kind); c.v = c.desired;
-    c.change = null; c.sig = 0; c.yaw = 0; c.crashed = false; c.spinV = 0; c.timer = rand(3, 10); c.side = Math.sign(z) || -1; c.counted = false;
+    c.change = null; c.sig = 0; c.yaw = 0; c.crashed = false; c.spinV = 0; c.timer = rand(3, 10); c.side = Math.sign(z) || -1; c.counted = false; c.yr = undefined; c.yb = false;
     if (c.kind !== 'semi') { const p = randomPaint(); c.veh.paint.color.setHex(p[0]); c.veh.paint.metalness = p[1] === 'metal' ? 0.55 : 0.04; }
     c.veh.group.visible = true;
     return true;
@@ -1611,6 +1623,13 @@ function resetTraffic() {
 
 function updateTraffic(dt, fwd) {
   const playerObj = { x: P.x, z: 0, v: fwd, L: 4.7, W: 2.0, isPlayer: true };
+  // Indicating? Work out which lane the player is signalling toward so drivers there can make room.
+  let yieldLane = -1;
+  if (IND.dir && state === 'play' && !P.crashed && !rew) {
+    IND.t += dt;
+    let pl = -1, bd = 2.6; LANES.forEach((lx, i) => { const d = Math.abs(P.x - lx); if (d < bd) { bd = d; pl = i; } });
+    if (pl >= 0) { yieldLane = pl + IND.dir; if (yieldLane < 0 || yieldLane > 3) yieldLane = -1; }
+  }
   for (const c of traffic) {
     if (c.z > 900) { if (c.idx < DIFF.traffic && Math.random() < dt * (mode === 'rush' ? 5 : 2)) spawnCar(c, fwd < 24 ? 'behind' : 'ahead'); continue; }
     const vL = c.veh.L;
@@ -1627,12 +1646,22 @@ function updateTraffic(dt, fwd) {
     if (!P.crashed || true) consider(playerObj, playerObj.x, 0, playerObj.L, P.crashed ? P.cvz : fwd);
     const safe = 7 + c.v * 1.15;
     let target = c.crashed ? 0 : c.desired;
+    if (c.yb) target = Math.min(target, Math.max(0, fwd * 0.72));
     if (lead && gap < safe * 1.6) target = Math.min(target, lead.v - (safe - gap) * 0.35);
     const maxDec = gap < safe * 0.5 ? 8.5 : 4.5;
     const dv = clamp(target - c.v, -maxDec * dt, 1.6 * dt);
     c.v = Math.max(0, c.v + dv);
     c.braking = dv < -0.6 * dt || (c.crashed && c.v > 0.5);
     // lane changes
+    // a driver in the lane the player is signalling for notices after a beat, then moves over; if boxed in, they ease off
+    if (yieldLane >= 0 && c.lane === yieldLane && !c.crashed && c.z > -60 && c.z < 30) {
+      if (c.yr === undefined) c.yr = IND.t + rand(0.4, 1.3);
+      if (IND.t >= c.yr && !c.change) {
+        const fl = yieldLane + IND.dir;
+        if (fl >= 0 && fl <= 3 && allowedLanes(c.kind).includes(fl) && laneFree(fl, c.z, vL, c, 10 + c.v * 0.5)) { c.change = { from: c.lane, to: fl, t: -0.25, fast: true }; c.yb = false; }
+        else c.yb = c.z > -6;
+      }
+    } else if (c.yb && !(yieldLane >= 0 && c.lane === yieldLane)) c.yb = false;
     c.timer -= dt;
     if (!c.change && !c.crashed && c.timer <= 0) {
       c.timer = rand(2.5, 8) * (1.2 - DIFF.lane * 0.8);
@@ -1648,10 +1677,10 @@ function updateTraffic(dt, fwd) {
       }
     }
     if (c.change) {
-      c.change.t += dt / (c.kind === 'semi' ? 4.2 : 2.8);
+      c.change.t += dt / (c.change.fast ? (c.kind === 'semi' ? 2.8 : 1.8) : c.kind === 'semi' ? 4.2 : 2.8);
       const t = clamp(c.change.t, 0, 1);
       const nx = lerp(LANES[c.change.from], LANES[c.change.to], smooth(t));
-      c.yaw = c.change.t > 0 ? -((nx - c.x) / Math.max(dt, 1e-4)) / Math.max(c.v, 5) : 0;
+      if (dt > 0) c.yaw = c.change.t > 0 ? -((nx - c.x) / Math.max(dt, 1e-4)) / Math.max(c.v, 5) : 0;
       c.x = nx;
       if (c.change.t >= 1) { c.lane = c.change.to; c.desired = laneSpeed(c.lane, c.kind); c.change = null; c.yaw = 0; }
     }
@@ -1660,7 +1689,7 @@ function updateTraffic(dt, fwd) {
     if (c.crashed) { c.yaw += c.spinV * dt; c.spinV *= Math.exp(-1.5 * dt); }
     if (c.z > (mode === 'rush' && fwd > c.v ? 70 : 160) || c.z < -1000) { c.z = 9999; c.veh.group.visible = false; continue; }
     // near miss: the player's front passes the car's rear (or the reverse)
-    if (!P.crashed && state === 'play') {
+    if (!P.crashed && state === 'play' && !rew) {
       const side = c.z < 0 ? -1 : 1;
       if (side !== c.side && Math.abs(c.z) < vL) {
         const hw = 0.97 + 2.31 * Math.abs(Math.sin(P.h));
@@ -2049,6 +2078,15 @@ const Sound = {
     g.gain.setValueAtTime(1.2 * k, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
     o.connect(g); g.connect(this.master); o.start(); o.stop(ctx.currentTime + 0.7);
   },
+  rewind(dur) {
+    if (!this.ctx) return;
+    const ctx = this.ctx, o = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter(), t0 = ctx.currentTime;
+    o.type = 'sawtooth'; f.type = 'lowpass'; f.frequency.value = 1900;
+    o.frequency.setValueAtTime(130, t0); o.frequency.exponentialRampToValueAtTime(1150, t0 + dur * 0.85);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.1, t0 + 0.08); g.gain.exponentialRampToValueAtTime(0.001, t0 + dur + 0.15);
+    o.connect(f); f.connect(g); g.connect(this.master); o.start(t0); o.stop(t0 + dur + 0.2);
+    this.burst(dur, 'bandpass', 1300, 0.22);
+  },
   ding() {
     if (!this.ctx) return;
     const ctx = this.ctx;
@@ -2175,7 +2213,7 @@ const Music = {
 // ======================================================================
 // Settings (persisted per viewer)
 // ======================================================================
-const SET = { v: 2, traffic: 1, swipeSafe: false, diff: 'normal', steer: 1.0, autoCenter: true, divided: true, terrain: 'flat', track: 'night', music: 0.7, sfx: 0.8, muted: false };
+const SET = { v: 2, traffic: 1, swipeSafe: false, rewindFx: true, diff: 'normal', steer: 1.0, autoCenter: true, divided: true, terrain: 'flat', track: 'night', music: 0.7, sfx: 0.8, muted: false };
 try {
   const saved = JSON.parse(localStorage.getItem('interstate-weave-settings') || '{}');
   if (saved.v !== 2) delete saved.steer; // steering model changed; start from the new default
@@ -2309,7 +2347,7 @@ addEventListener('keydown', (e) => {
   if (e.repeat) return;
   if (e.code === 'KeyC' && state !== 'menu') camMode = 1 - camMode;
   if (e.code === 'KeyR') rewind();
-  if ((e.code === 'KeyQ' || e.code === 'KeyE') && state === 'play') { const d = e.code === 'KeyQ' ? -1 : 1; IND.dir = IND.dir === d ? 0 : d; IND.tick = -1; }
+  if ((e.code === 'KeyQ' || e.code === 'KeyE') && state === 'play') { const d = e.code === 'KeyQ' ? -1 : 1; IND.dir = IND.dir === d ? 0 : d; IND.tick = -1; IND.t = 0; for (const c of traffic) { c.yr = undefined; c.yb = false; } }
   if (e.code === 'KeyM') toggleMute();
   if (e.code === 'Escape' && !$('settings').hidden) { closeSettings(); return; }
   if ((e.code === 'KeyP' || e.code === 'Escape') && (state === 'play' || state === 'paused')) togglePause();
@@ -2356,6 +2394,7 @@ function syncSettingsUI() {
   $('setMute').checked = SET.muted;
   $('setCenter').checked = SET.autoCenter;
   $('setSwipe').checked = !!SET.swipeSafe;
+  $('setRewFx').checked = SET.rewindFx !== false;
   document.querySelectorAll('#setTrack button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.v === SET.track)));
 }
 let settingsReturn = null;
@@ -2373,6 +2412,7 @@ $('setMusicVol').addEventListener('input', (e) => { SET.music = e.target.value /
 $('setSfxVol').addEventListener('input', (e) => { SET.sfx = e.target.value / 100; $('setSfxVolVal').textContent = e.target.value + '%'; Sound.applyVolumes(); });
 $('setMute').addEventListener('change', (e) => { SET.muted = e.target.checked; Sound.applyVolumes(); });
 $('setCenter').addEventListener('change', (e) => { SET.autoCenter = e.target.checked; saveSettings(); });
+$('setRewFx').addEventListener('change', (e) => { SET.rewindFx = e.target.checked; saveSettings(); });
 $('setSwipe').addEventListener('change', (e) => { SET.swipeSafe = e.target.checked; saveSettings(); });
 document.querySelectorAll('#setTrack button').forEach((b) => b.addEventListener('click', () => {
   SET.track = b.dataset.v; syncSettingsUI(); saveSettings();
@@ -2558,7 +2598,7 @@ function startGame() {
   Sound.init(); Music.start();
   LV = mode === 'levels' ? LEVELS[selLevel - 1] : null;
   setDiff(LV || (mode === 'rush' ? rushDiff(0) : endlessDiff(0)));
-  IND.dir = 0; resetPlayer(); resetTraffic(); resetPursuit(); resetRush(); resetStunt(); hist.length = 0; histT = 0;
+  IND.dir = 0; endRewFx(); resetPlayer(); resetTraffic(); resetPursuit(); resetRush(); resetStunt(); hist.length = 0; histT = 0;
   $('menu').hidden = true; $('over').hidden = true; $('clear').hidden = true; $('pause').hidden = true; $('hud').hidden = false;
   $('hLvl').hidden = !LV; $('pops').innerHTML = '';
   $('hPur').hidden = $('radar').hidden = mode !== 'pursuit';
@@ -3009,7 +3049,6 @@ function updateHud(now) {
 // ======================================================================
 const REWIND_S = 7, hist = [];
 let histT = 0;
-const IND = { dir: 0, tick: -1 }; // turn indicators: -1 left, 1 right, 0 off (Q / E toggle)
 const plain = (c) => { const o = {}; for (const k in c) { const v = c[k]; if (v === null || typeof v !== 'object') o[k] = v; else if (k === 'change') o[k] = { ...v }; } return o; };
 function snapshot() {
   return { P: { ...P }, DIFF: { ...DIFF }, RUSH: { ...RUSH }, PUR: { ...PUR }, ST: stuntSnap(),
@@ -3030,9 +3069,30 @@ function recordHistory(dt) {
   histT = 0; hist.push(snapshot());
   if (hist.length > REWIND_S * 10 + 1) hist.shift();
 }
+function endRewFx() { rew = null; $('rewFx').hidden = true; renderer.domElement.style.filter = ''; }
 function rewind() {
-  if (state !== 'play' || !hist.length) return;
-  const s = hist[0], secs = Math.min(REWIND_S, Math.round((hist.length - 1) / 10));
+  if (state !== 'play' || !hist.length || rew) return;
+  const n = hist.length, secs = Math.min(REWIND_S, Math.round((n - 1) / 10));
+  slowmo = 0; shake = 0;
+  if (SET.rewindFx !== false && n > 3) {
+    rew = { t: 0, dur: 0.5 + 0.08 * (n - 1) / 10 * 1.0 + 0.1, n, secs, last: -1 };
+    $('rewFx').hidden = false; renderer.domElement.style.filter = 'saturate(.45) hue-rotate(-12deg) contrast(1.12) brightness(1.05)';
+    $('pops').innerHTML = ''; Sound.rewind(rew.dur);
+    return;
+  }
+  finishRewind(secs);
+}
+// scrub through the recorded snapshots newest -> oldest, easing in and out like a tape
+function stepRewind(rdt) {
+  rew.t += rdt / rew.dur;
+  if (rew.t >= 1) { const secs = rew.secs; endRewFx(); finishRewind(secs); return; }
+  const x = rew.t, e = x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+  const idx = Math.round((1 - e) * (rew.n - 1));
+  if (idx !== rew.last) { rew.last = idx; restore(hist[idx]); }
+  $('rewSec').textContent = '-' + (rew.secs * e).toFixed(1) + ' s';
+}
+function finishRewind(secs) {
+  const s = hist[0];
   restore(s); hist.length = 0; hist.push(s); histT = 0;
   slowmo = 0; shake = 0;
   camPos.set(P.x, 2.3, 7);
@@ -3179,6 +3239,7 @@ function frame(now) {
   }
   let dt = rdt;
   if (slowmo > 0) { slowmo -= rdt; dt *= 0.3; }
+  if (rew) { dt = 0; stepRewind(rdt); }
   // Fixed substeps keep the physics stable at low frame rates.
   const steps = Math.ceil(dt / (1 / 120)), h = dt / steps;
   for (let i = 0; i < steps; i++) {
@@ -3188,10 +3249,11 @@ function frame(now) {
     if (mode === 'stunt' && state !== 'menu') updateStunt(h);
     if (state === 'play') { checkCollisions(); if (mode === 'pursuit') checkCopHits(); }
   }
-  if (state === 'play') recordHistory(dt);
-  if (mode === 'pursuit' && state === 'play' && !P.crashed) updatePursuitRules(dt);
+  if (rew) { updateTraffic(0, P.fwd); if (mode === 'pursuit') updateCops(0, P.fwd); if (mode === 'stunt') updateStunt(0); }
+  if (state === 'play' && !rew) recordHistory(dt);
+  if (mode === 'pursuit' && state === 'play' && !P.crashed && !rew) updatePursuitRules(dt);
   flashCops(now);
-  if (state === 'play') {
+  if (state === 'play' && !rew) {
     if (!P.crashed) {
       const wrongWay = !divided && P.x < 0;
       P.clock += dt;
