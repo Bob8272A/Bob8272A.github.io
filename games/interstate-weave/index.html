@@ -23,6 +23,7 @@ html,body{height:100%}
 body{margin:0;background:var(--night);color:var(--paper);font-family:var(--display);overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none}
 #app{position:fixed;inset:0}
 #scene{display:block;width:100%;height:100%}
+#drops{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none}
 button{font-family:var(--display);cursor:pointer}
 button:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
 
@@ -186,6 +187,7 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px;margin:0}
 
 <div id="app">
   <canvas id="scene" aria-label="3D highway driving view"></canvas>
+  <canvas id="drops" aria-hidden="true"></canvas>
 
   <div class="hud" id="hud" hidden>
     <div class="left">
@@ -299,6 +301,14 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px;margin:0}
         </div>
       </div>
       <div class="field">
+        <span class="field-label" id="weatherLabel">Weather</span>
+        <div class="seg" role="radiogroup" aria-labelledby="weatherLabel" id="weatherSeg">
+          <button role="radio" id="weather-clear" data-v="clear" aria-checked="true">Clear</button>
+          <button role="radio" id="weather-rain" data-v="rain" aria-checked="false">Rain</button>
+        </div>
+        <p class="lvl-info" id="weatherInfo" hidden>Rain, spray and a wet road. Visibility drops, headlights come on, and you get about 15% less grip and braking, so brake earlier and ease into your lane changes. Lightning now and then. In the driver's-seat view (C) the wipers work the windscreen.</p>
+      </div>
+      <div class="field">
         <span class="field-label" id="diffLabel">Difficulty</span>
         <div class="seg" role="radiogroup" aria-labelledby="diffLabel" id="diffSeg">
           <button role="radio" id="diff-easy" data-v="easy" aria-checked="false">Easy</button>
@@ -403,6 +413,14 @@ input[type=range]{width:100%;accent-color:var(--amber);height:28px;margin:0}
       </div>
       <label class="check" for="setCenter"><input type="checkbox" id="setCenter" checked> Auto-straighten when you let go of steering</label>
       <label class="check" for="setRewFx"><input type="checkbox" id="setRewFx" checked> Rewind animation (tape-style scrub back through the run)</label>
+      <div class="field">
+        <span class="field-label" id="blurLabel">Motion blur at speed</span>
+        <div class="seg" role="radiogroup" aria-labelledby="blurLabel" id="setBlur">
+          <button role="radio" id="blur-off" data-v="off" aria-checked="false">Off</button>
+          <button role="radio" id="blur-light" data-v="light" aria-checked="true">Light</button>
+          <button role="radio" id="blur-strong" data-v="strong" aria-checked="false">Strong</button>
+        </div>
+      </div>
       <label class="check" for="setSwipe"><input type="checkbox" id="setSwipe"> Side-swipes can't wreck my car (damage stops at 99%)</label>
       <div class="field">
         <span class="field-label" id="trackLabel">Music</span>
@@ -2030,6 +2048,7 @@ const Sound = {
     this.squeal = chain(noise(), 'bandpass', 2300, 14, 0);
     this.scrape = chain(noise(), 'highpass', 2600, 0.8, 0);
     this.pass = chain(noise(), 'bandpass', 520, 0.9, 0);
+    this.rain = chain(noise(), 'highpass', 1700, 0.5, 0);
     // police siren: a swept tone (slow wail far away, fast yelp up close)
     this.siren = ctx.createOscillator(); this.siren.type = 'triangle'; this.siren.frequency.value = 950;
     this.sirenLfo = ctx.createOscillator(); this.sirenLfo.type = 'sine'; this.sirenLfo.frequency.value = 0.4;
@@ -2057,6 +2076,7 @@ const Sound = {
     this.set(this.squeal.fl.frequency, 2000 + s.slip * 700, 0.05);
     this.set(this.scrape.g.gain, s.active ? s.scrape * 0.35 : 0, 0.03);
     this.set(this.pass.g.gain, s.active ? Math.min(0.5, s.pass) : 0, 0.05);
+    this.set(this.rain.g.gain, s.active && SET.weather === 'rain' ? 0.085 : 0, 0.5);
     const sd = s.copDist || 1e9;
     this.set(this.sirenGain.gain, sd < 1e8 ? 0.16 / (1 + (sd / 70) * (sd / 70)) : 0, 0.1);
     this.set(this.sirenLfo.frequency, sd < 45 ? 4.2 : 0.4, 0.2);
@@ -2078,6 +2098,7 @@ const Sound = {
     g.gain.setValueAtTime(1.2 * k, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
     o.connect(g); g.connect(this.master); o.start(); o.stop(ctx.currentTime + 0.7);
   },
+  thunder() { if (!this.ctx) return; this.burst(3.4, 'lowpass', 140, 0.9); this.burst(1.8, 'lowpass', 420, 0.45); },
   rewind(dur) {
     if (!this.ctx) return;
     const ctx = this.ctx, o = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter(), t0 = ctx.currentTime;
@@ -2213,13 +2234,15 @@ const Music = {
 // ======================================================================
 // Settings (persisted per viewer)
 // ======================================================================
-const SET = { v: 2, traffic: 1, swipeSafe: false, rewindFx: true, diff: 'normal', steer: 1.0, autoCenter: true, divided: true, terrain: 'flat', track: 'night', music: 0.7, sfx: 0.8, muted: false };
+const SET = { v: 2, traffic: 1, swipeSafe: false, rewindFx: true, motionBlur: 'light', weather: 'clear', diff: 'normal', steer: 1.0, autoCenter: true, divided: true, terrain: 'flat', track: 'night', music: 0.7, sfx: 0.8, muted: false };
 try {
   const saved = JSON.parse(localStorage.getItem('interstate-weave-settings') || '{}');
   if (saved.v !== 2) delete saved.steer; // steering model changed; start from the new default
   Object.assign(SET, saved, { v: 2 });
 } catch (e) { /* defaults */ }
 if (!(SET.track in TRACKS) && SET.track !== 'off') SET.track = 'night';
+if (!['off', 'light', 'strong'].includes(SET.motionBlur)) SET.motionBlur = 'light';
+if (SET.weather !== 'rain') SET.weather = 'clear';
 function saveSettings() { try { localStorage.setItem('interstate-weave-settings', JSON.stringify(SET)); } catch (e) { /* storage unavailable */ } }
 
 // ======================================================================
@@ -2236,7 +2259,16 @@ function applyPreset(name) {
   renderer.toneMappingExposure = p.exposure;
   hillsFar.material.color.setHex(p.hillsFar); hillsNear.material.color.setHex(p.hillsNear);
   stars.visible = !!p.stars;
-  LIGHTS = p.lights;
+  const rain = SET.weather === 'rain';
+  if (rain) { // overcast: grey the sky and fog, thin out the sun and pull the fog in
+    const dull = (c, t, k) => { const l = c.r * 0.3 + c.g * 0.59 + c.b * 0.11; c.lerp(new THREE.Color(l, l, l), t).multiplyScalar(k); };
+    dull(skyUniforms.top.value, 0.55, 0.8); dull(skyUniforms.horizon.value, 0.6, 0.78); dull(skyUniforms.ground.value, 0.4, 0.8);
+    dull(scene.fog.color, 0.6, 0.82); dull(hillsFar.material.color, 0.5, 0.8); dull(hillsNear.material.color, 0.5, 0.8); dull(hemi.color, 0.4, 0.9);
+    scene.fog.near *= 0.3; scene.fog.far *= 0.5; sun.intensity *= 0.28; hemi.intensity *= 0.9; skyUniforms.disk.value = 0; stars.visible = false;
+  }
+  roadMat.roughness = rain ? 0.5 : 1; roadMat.color.setScalar(rain ? 0.58 : 1); roadMat.envMapIntensity = rain ? 2 : 1;
+  rainU.tint.value.copy(scene.fog.color).multiplyScalar(1.7).addScalar(0.1);
+  LIGHTS = rain ? Math.max(p.lights, 0.5) : p.lights;
   MAT.head.emissiveIntensity = 0.15 + LIGHTS * 4;
   lampHeadMat.emissiveIntensity = LIGHTS * 6;
   poolMat.opacity = LIGHTS * 0.42;
@@ -2395,6 +2427,7 @@ function syncSettingsUI() {
   $('setCenter').checked = SET.autoCenter;
   $('setSwipe').checked = !!SET.swipeSafe;
   $('setRewFx').checked = SET.rewindFx !== false;
+  document.querySelectorAll('#setBlur button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.v === SET.motionBlur)));
   document.querySelectorAll('#setTrack button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.v === SET.track)));
 }
 let settingsReturn = null;
@@ -2412,6 +2445,7 @@ $('setMusicVol').addEventListener('input', (e) => { SET.music = e.target.value /
 $('setSfxVol').addEventListener('input', (e) => { SET.sfx = e.target.value / 100; $('setSfxVolVal').textContent = e.target.value + '%'; Sound.applyVolumes(); });
 $('setMute').addEventListener('change', (e) => { SET.muted = e.target.checked; Sound.applyVolumes(); });
 $('setCenter').addEventListener('change', (e) => { SET.autoCenter = e.target.checked; saveSettings(); });
+document.querySelectorAll('#setBlur button').forEach((b) => b.addEventListener('click', () => { SET.motionBlur = b.dataset.v; syncSettingsUI(); saveSettings(); }));
 $('setRewFx').addEventListener('change', (e) => { SET.rewindFx = e.target.checked; saveSettings(); });
 $('setSwipe').addEventListener('change', (e) => { SET.swipeSafe = e.target.checked; saveSettings(); });
 document.querySelectorAll('#setTrack button').forEach((b) => b.addEventListener('click', () => {
@@ -2451,6 +2485,15 @@ function applyDivider() {
 document.querySelectorAll('#roadSeg button').forEach((b) => b.addEventListener('click', () => {
   SET.divided = b.dataset.v === 'divided'; saveSettings(); applyDivider();
   if (state === 'menu') { resetPlayer(); resetTraffic(); }
+}));
+
+// weather: clear or rain (re-applies the time-of-day preset so the sky, fog and road pick it up)
+function renderWeather() {
+  document.querySelectorAll('#weatherSeg button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.v === SET.weather)));
+  $('weatherInfo').hidden = SET.weather !== 'rain';
+}
+document.querySelectorAll('#weatherSeg button').forEach((b) => b.addEventListener('click', () => {
+  SET.weather = b.dataset.v; saveSettings(); renderWeather(); applyPreset(preset);
 }));
 
 // terrain: flat, rolling hills, or hills with curves
@@ -2757,13 +2800,14 @@ function updatePlayer(dt, autopilot) {
   P.throttle = damp(P.throttle, throttle, 8, dt);
   const v = Math.max(P.v, 0.1);
   // yaw from steering, limited by grip
-  const maxYaw = Math.min(0.9 + sens * 0.45, ((6.2 + sens * 2.8) * car.grip) / Math.max(v, 4));
+  const wet = SET.weather === 'rain' ? 0.85 : 1; // slick road
+  const maxYaw = Math.min(0.9 + sens * 0.45, ((6.2 + sens * 2.8) * car.grip * wet) / Math.max(v, 4));
   // With auto-straighten off, releasing the keys holds the current heading instead of easing back.
   const centring = SET.autoCenter ? clamp(-P.h * (1.8 + sens * 1.0), -maxYaw, maxYaw) : 0;
   let yawTarget = Math.abs(P.si) > 0.02 ? siEased * maxYaw : centring;
   if (airborne) yawTarget *= 0.35;
   P.yaw = damp(P.yaw, yawTarget, (4.5 + sens * 3) * car.steer, dt);
-  const lat = P.yaw * v, grip = (8.4 + sens * 1.6) * car.grip;
+  const lat = P.yaw * v, grip = (8.4 + sens * 1.6) * car.grip * wet;
   P.slip = clamp((Math.abs(lat) - 7.2) / 2.4, 0, 1);
   if (brk && v > 25) P.slip = Math.max(P.slip, 0.25 + Math.abs(P.si) * 0.4);
   if (Math.abs(lat) > grip) P.yaw *= grip / Math.abs(lat);
@@ -2775,7 +2819,7 @@ function updatePlayer(dt, autopilot) {
   const m = 1520, power = car.power;
   const drive = airborne ? 0 : P.throttle * Math.min(m * (5.4 + power / 1.2e6), power / Math.max(v, 3));
   const drag = car.drag * v * v, rollR = m * 9.81 * 0.013, engBrake = (1 - P.throttle) * m * 0.55;
-  const brakeF = (airborne ? 0 : brk) * m * (12.5 + Math.min(v, 80) * 0.035) * car.brake;
+  const brakeF = (airborne ? 0 : brk) * m * (12.5 + Math.min(v, 80) * 0.035) * car.brake * wet;
   let a = (drive - drag - rollR - engBrake - brakeF) / m - Math.abs(lat) * 0.025 - 9.81 * HILL.slope;
   const boost = mode === 'stunt' && STUNT.boosting;
   if (boost) a += 15;
@@ -3221,11 +3265,131 @@ function stuntLand() {
 }
 
 // ======================================================================
+// Weather (rain, wipers, lightning) and motion blur
+// ======================================================================
+const rainU = {
+  off: { value: new THREE.Vector3() }, cam: { value: new THREE.Vector3() }, box: { value: new THREE.Vector3(38, 20, 76) },
+  vel: { value: new THREE.Vector3(0, -22, 0) }, tint: { value: new THREE.Color(0.6, 0.65, 0.7) }, alpha: { value: 0.55 },
+};
+const rainMesh = (() => {
+  const N = 2600, pos = new Float32Array(N * 6), end = new Float32Array(N * 2);
+  for (let i = 0; i < N; i++) {
+    const x = Math.random() * 2 - 1, y = Math.random() * 2 - 1, z = Math.random() * 2 - 1;
+    for (let k = 0; k < 2; k++) { pos.set([x, y, z], (i * 2 + k) * 3); end[i * 2 + k] = k; }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('aEnd', new THREE.BufferAttribute(end, 1));
+  const m = new THREE.ShaderMaterial({
+    uniforms: rainU, transparent: true, depthWrite: false,
+    vertexShader: `uniform vec3 off, cam, box, vel; attribute float aEnd; varying float vA;
+      void main() {
+        vec3 q = position * box * 0.5 + off;
+        vec3 rel = mod(q - cam + box * 0.5, box) - box * 0.5;
+        vec3 w = cam + rel - vel * 0.014 * aEnd;
+        float d = length(rel);
+        vA = (1.0 - aEnd * 0.85) * (1.0 - smoothstep(box.z * 0.18, box.z * 0.5, d));
+        gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+      }`,
+    fragmentShader: `uniform vec3 tint; uniform float alpha; varying float vA;
+      void main() { gl_FragColor = vec4(tint, alpha * vA);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
+  const l = new THREE.LineSegments(g, m); l.frustumCulled = false; l.renderOrder = 50; l.visible = false; scene.add(l);
+  return l;
+})();
+function updateRain(dt) {
+  const on = SET.weather === 'rain'; rainMesh.visible = on; if (!on) return;
+  const v = rainU.vel.value, b = rainU.box.value, o = rainU.off.value;
+  v.set(-1.5, -22, state === 'menu' ? 14 : Math.min(P.fwd, 80));
+  o.addScaledVector(v, dt);
+  o.x = ((o.x % b.x) + b.x) % b.x; o.y = ((o.y % b.y) + b.y) % b.y; o.z = ((o.z % b.z) + b.z) % b.z;
+  rainU.cam.value.copy(camera.position);
+}
+// rain on the windscreen in the driver's-seat view, cleared by a wiper that sweeps every few seconds
+const dropsEl = $('drops'), dg = dropsEl.getContext('2d'), drops = [], WIPE = { t: 0, a: 0, prev: 0 };
+function updateDrops(dt) {
+  const show = SET.weather === 'rain' && camMode === 1 && state !== 'menu';
+  if (!show) { if (dropsEl.style.display !== 'none') { dropsEl.style.display = 'none'; drops.length = 0; } return; }
+  dropsEl.style.display = 'block';
+  const W = dropsEl.width, H = dropsEl.height, px = W * 0.62, py = H * 0.66, L = H * 0.62;
+  WIPE.t = (WIPE.t + dt) % 3.2; WIPE.prev = WIPE.a;
+  const u = WIPE.t; WIPE.a = u < 0.8 ? (u / 0.8) * Math.PI : u < 1.6 ? (1 - (u - 0.8) / 0.8) * Math.PI : 0;
+  let k = (60 + Math.min(P.fwd, 80)) * dt;
+  while (k > 0 && drops.length < 650) { if (Math.random() < Math.min(1, k)) drops.push({ x: Math.random() * W, y: H * (0.04 + Math.random() * 0.6), r: 1 + Math.random() * Math.random() * 5.5, a: 0 }); k -= 1; }
+  const lo = Math.min(WIPE.prev, WIPE.a) - 0.04, hi = Math.max(WIPE.prev, WIPE.a) + 0.04, sweeping = WIPE.a !== WIPE.prev;
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const d = drops[i]; d.a = Math.min(1, d.a + dt * 3); d.y -= Math.min(P.fwd, 80) * 0.05 * d.r * dt;
+    if (d.y < 0) { drops.splice(i, 1); continue; }
+    if (sweeping) { const dx = d.x - px, dy = d.y - py; if (Math.hypot(dx, dy) < L) { const da = Math.atan2(-dy, -dx); if (da >= lo && da <= hi) drops.splice(i, 1); } }
+  }
+  dg.clearRect(0, 0, W, H);
+  for (const d of drops) {
+    dg.fillStyle = `rgba(185,210,232,${0.2 * d.a})`; dg.beginPath(); dg.arc(d.x, d.y, d.r, 0, 6.2832); dg.fill();
+    dg.fillStyle = `rgba(255,255,255,${0.55 * d.a})`; dg.beginPath(); dg.arc(d.x - d.r * 0.3, d.y - d.r * 0.35, Math.max(0.5, d.r * 0.32), 0, 6.2832); dg.fill();
+  }
+  dg.save(); dg.beginPath(); dg.rect(0, 0, W, py); dg.clip();
+  const ex = px - Math.cos(WIPE.a) * L, ey = py - Math.sin(WIPE.a) * L, bx = px - Math.cos(WIPE.a) * L * 0.34, by = py - Math.sin(WIPE.a) * L * 0.34;
+  dg.lineCap = 'round'; dg.strokeStyle = '#0b0c0e'; dg.lineWidth = Math.max(2, W * 0.004); dg.beginPath(); dg.moveTo(px, py); dg.lineTo(ex, ey); dg.stroke();
+  dg.lineWidth = Math.max(3, W * 0.007); dg.beginPath(); dg.moveTo(bx, by); dg.lineTo(ex, ey); dg.stroke();
+  dg.restore();
+}
+// lightning: a double flash, then thunder a moment later
+const STORM = { t: 7 };
+function lightning() {
+  const fl = $('flash'), set = (o, ms) => setTimeout(() => { fl.style.transition = 'none'; fl.style.opacity = o; }, ms);
+  set(0.55, 0); set(0, 70); set(0.4, 140);
+  setTimeout(() => { fl.style.transition = 'opacity .35s'; fl.style.opacity = 0; }, 215);
+  setTimeout(() => Sound.thunder(), 500 + Math.random() * 1800);
+}
+
+// Motion blur: the scene is drawn into a half-float target, then a radial (zoom) blur from the road's vanishing
+// point, stronger toward the screen edges, is applied while tone-mapping to the screen. Strength follows speed.
+const blurU = { tex: { value: null }, k: { value: 0 }, ctr: { value: new THREE.Vector2(0.5, 0.5) } };
+const blurScene = new THREE.Scene(), blurCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+let blurRT = null;
+try {
+  if (renderer.extensions.has('EXT_color_buffer_float') || renderer.extensions.has('EXT_color_buffer_half_float')) {
+    blurRT = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+      uniforms: blurU, depthTest: false, depthWrite: false,
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: `uniform sampler2D tex; uniform float k; uniform vec2 ctr; varying vec2 vUv;
+        void main() {
+          vec2 d = vUv - ctr; vec4 acc = vec4(0.0); float tot = 0.0;
+          for (int i = 0; i < 12; i++) { float f = float(i) / 11.0; float w = 1.0 - f * 0.55; acc += texture2D(tex, ctr + d * (1.0 - k * f)) * w; tot += w; }
+          gl_FragColor = vec4((acc / tot).rgb, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+    }));
+    quad.frustumCulled = false; blurScene.add(quad);
+  }
+} catch (e) { blurRT = null; }
+function blurAmount() {
+  const lvl = SET.motionBlur === 'strong' ? 1 : SET.motionBlur === 'light' ? 0.5 : 0;
+  if (!lvl || !blurRT || state === 'menu') return 0;
+  const x = clamp((P.fwd - 26) / 70, 0, 1), sp = x * x * (3 - 2 * x);
+  return lvl * Math.min(1, sp + (mode === 'stunt' && STUNT.boosting ? 0.25 : 0));
+}
+function drawScene() {
+  const a = blurAmount();
+  if (a > 0.02) {
+    blurU.k.value = a * 0.11; blurU.tex.value = blurRT.texture;
+    renderer.setRenderTarget(blurRT); renderer.render(scene, camera); renderer.setRenderTarget(null);
+    renderer.render(blurScene, blurCam);
+  } else renderer.render(scene, camera);
+}
+
+// ======================================================================
 // Main loop
 // ======================================================================
 function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  if (blurRT) { const v = renderer.getDrawingBufferSize(new THREE.Vector2()); blurRT.setSize(v.x, v.y); }
+  dropsEl.width = Math.max(2, Math.round(w / 2)); dropsEl.height = Math.max(2, Math.round(h / 2));
 }
 addEventListener('resize', resize); resize();
 
@@ -3235,7 +3399,7 @@ function frame(now) {
   let rdt = Math.min(0.05, (now - last) / 1000); last = now;
   if (state === 'paused') {
     Sound.update({ rpm: P.rpm, throttle: 0, speed: 0, slip: 0, scrape: 0, pass: 0, copDist: 1e9, active: false });
-    renderer.render(scene, camera); return;
+    drawScene(); return;
   }
   let dt = rdt;
   if (slowmo > 0) { slowmo -= rdt; dt *= 0.3; }
@@ -3324,7 +3488,9 @@ function frame(now) {
   if (mode === 'pursuit' && state !== 'menu') for (const c of cops) if (c.active && !c.crashed) copDist = Math.min(copDist, Math.hypot(c.z, c.x - P.x));
   Sound.update({ rpm: P.rpm, throttle: P.throttle, speed: P.fwd, slip: P.slip, scrape: P.scrape, pass, copDist, active: state === 'play' || state === 'over' || state === 'clear' });
   if (state === 'play') updateHud(now);
-  renderer.render(scene, camera);
+  if (SET.weather === 'rain' && state === 'play' && !rew) { STORM.t -= rdt; if (STORM.t <= 0) { STORM.t = 9 + Math.random() * 16; lightning(); } }
+  updateRain(rdt); updateDrops(rdt);
+  drawScene();
 }
 
 // ======================================================================
@@ -3336,6 +3502,7 @@ resetTraffic();
 { const saved = CARS.find((c) => c.id === PROG.car); if (saved && carUnlocked(saved)) selectCar(saved); }
 applyDivider();
 renderTerrain();
+renderWeather();
 renderDifficulty();
 renderTraffic();
 patchHill(scene);
