@@ -194,8 +194,8 @@ local bloom = Instance.new("BloomEffect"); bloom.Intensity = 0.35; bloom.Size = 
 local sun = Instance.new("SunRaysEffect"); sun.Intensity = 0.08; sun.Parent = Lighting
 local rainOn = false
 local function applyWeather()
-	Lighting.ClockTime = rainOn and 17.2 or 18.4
-	Lighting.Brightness = rainOn and 1.4 or 2.4
+	Lighting.ClockTime = rainOn and 15.5 or 17.1
+	Lighting.Brightness = rainOn and 1.8 or 3
 	Lighting.EnvironmentDiffuseScale = 1; Lighting.EnvironmentSpecularScale = 1
 	Lighting.Ambient = rainOn and Color3.fromRGB(70, 74, 84) or Color3.fromRGB(86, 74, 78)
 	Lighting.OutdoorAmbient = rainOn and Color3.fromRGB(80, 86, 98) or Color3.fromRGB(120, 100, 98)
@@ -237,8 +237,8 @@ local function buildSegment()
 	for _ = 1, 5 do
 		local side = rng:NextInteger(0, 1) == 0 and -1 or 1
 		local tx, tz, h = side * rng:NextNumber(ROAD_HALF + 6, ROAD_HALF + 45), rng:NextNumber(-L / 2, L / 2), rng:NextNumber(5, 9)
-		mk(m, Vector3.new(0.5, h * 0.5, 0.5), CFrame.new(tx * S, h * 0.25 * S, tz * S), Color3.fromRGB(70, 50, 36), Enum.Material.Wood)
-		mk(m, Vector3.new(h * 0.65, h * 0.8, h * 0.65), CFrame.new(tx * S, h * 0.75 * S, tz * S), Color3.fromRGB(34, 72, 44), Enum.Material.Grass, { shape = Enum.PartType.Ball })
+		mk(m, Vector3.new(0.5, h * 0.7, 0.5), CFrame.new(tx * S, h * 0.35 * S, tz * S), Color3.fromRGB(70, 50, 36), Enum.Material.Wood)
+		mk(m, Vector3.new(h * 0.6, h * 0.6, h * 0.6), CFrame.new(tx * S, h * 0.8 * S, tz * S), Color3.fromRGB(34, 72, 44), Enum.Material.Grass, { shape = Enum.PartType.Ball })
 	end
 	m.Parent = world
 	return m
@@ -328,14 +328,14 @@ end
 
 -- HUD
 local hud = Instance.new("Frame"); hud.Size = UDim2.fromScale(1, 1); hud.BackgroundTransparency = 1; hud.Visible = false; hud.Parent = gui
-local scoreL = label(hud, { Size = UDim2.fromOffset(300, 40), Position = UDim2.fromOffset(20, 16), TextSize = 30, TextXAlignment = Enum.TextXAlignment.Left, Text = "0" })
-local distL = label(hud, { Size = UDim2.fromOffset(300, 22), Position = UDim2.fromOffset(20, 54), TextSize = 16, TextColor3 = Color3.fromRGB(200, 210, 200), TextXAlignment = Enum.TextXAlignment.Left, Text = "0.00 mi" })
-local comboL = label(hud, { Size = UDim2.fromOffset(300, 30), Position = UDim2.fromOffset(20, 78), TextSize = 22, TextColor3 = Color3.fromRGB(245, 181, 36), TextXAlignment = Enum.TextXAlignment.Left, Text = "" })
+local scoreL = label(hud, { Size = UDim2.fromOffset(300, 40), Position = UDim2.fromOffset(20, 64), TextSize = 30, TextXAlignment = Enum.TextXAlignment.Left, Text = "0" })
+local distL = label(hud, { Size = UDim2.fromOffset(300, 22), Position = UDim2.fromOffset(20, 102), TextSize = 16, TextColor3 = Color3.fromRGB(200, 210, 200), TextXAlignment = Enum.TextXAlignment.Left, Text = "0.00 mi" })
+local comboL = label(hud, { Size = UDim2.fromOffset(300, 30), Position = UDim2.fromOffset(20, 126), TextSize = 22, TextColor3 = Color3.fromRGB(245, 181, 36), TextXAlignment = Enum.TextXAlignment.Left, Text = "" })
 local speedL = label(hud, { Size = UDim2.fromOffset(240, 70), AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -28, 1, -56), TextSize = 64, TextXAlignment = Enum.TextXAlignment.Right, Text = "0" })
 label(hud, { Size = UDim2.fromOffset(240, 20), AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -28, 1, -34), TextSize = 16, TextColor3 = Color3.fromRGB(245, 181, 36), TextXAlignment = Enum.TextXAlignment.Right, Text = "MPH" })
-local dmgBack = Instance.new("Frame"); dmgBack.Size = UDim2.fromOffset(220, 12); dmgBack.Position = UDim2.fromOffset(20, 112); dmgBack.BackgroundColor3 = Color3.fromRGB(20, 22, 26); dmgBack.BorderSizePixel = 0; dmgBack.Parent = hud
+local dmgBack = Instance.new("Frame"); dmgBack.Size = UDim2.fromOffset(220, 12); dmgBack.Position = UDim2.fromOffset(20, 160); dmgBack.BackgroundColor3 = Color3.fromRGB(20, 22, 26); dmgBack.BorderSizePixel = 0; dmgBack.Parent = hud
 local dmgBar = Instance.new("Frame"); dmgBar.Size = UDim2.fromScale(0, 1); dmgBar.BackgroundColor3 = Color3.fromRGB(226, 54, 44); dmgBar.BorderSizePixel = 0; dmgBar.Parent = dmgBack
-label(hud, { Size = UDim2.fromOffset(200, 16), Position = UDim2.fromOffset(20, 126), TextSize = 12, TextColor3 = Color3.fromRGB(200, 205, 210), TextXAlignment = Enum.TextXAlignment.Left, Text = "DAMAGE" })
+label(hud, { Size = UDim2.fromOffset(200, 16), Position = UDim2.fromOffset(20, 174), TextSize = 12, TextColor3 = Color3.fromRGB(200, 205, 210), TextXAlignment = Enum.TextXAlignment.Left, Text = "DAMAGE" })
 local indL = label(hud, { Size = UDim2.fromOffset(60, 50), AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, -50, 1, -24), TextSize = 44, TextColor3 = Color3.fromRGB(60, 50, 30), Text = "◀" })
 local indR = label(hud, { Size = UDim2.fromOffset(60, 50), AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 50, 1, -24), TextSize = 44, TextColor3 = Color3.fromRGB(60, 50, 30), Text = "▶" })
 local toast = label(hud, { Size = UDim2.fromOffset(600, 40), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.18, 0), TextSize = 30, TextColor3 = Color3.fromRGB(255, 243, 176), Text = "", TextTransparency = 1 })
