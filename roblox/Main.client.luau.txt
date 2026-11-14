@@ -1,0 +1,732 @@
+--!nonstrict
+-- INTERSTATE WEAVE - Roblox port. Single-player highway weaving; everything is simulated on the client.
+-- Controls: W/S gas+brake, A/D steer, Q/E indicators (traffic makes room), R rewind 7 s, C camera, T rain, P pause.
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+local StarterGui = game:GetService("StarterGui")
+
+local player = Players.LocalPlayer
+local camera = Workspace.CurrentCamera
+local S = 3.571 -- studs per metre
+local MPH = 0.44704
+local LANE_W = 3.7
+local ROAD_HALF = 2 * LANE_W + 0.9 -- metres from centre to the edge line
+local SEG_LEN, SEG_COUNT = 80, 20
+local REWIND_S = 7
+
+local function laneX(i) return (i - 2.5) * LANE_W end
+local function rnd(a, b) return a + math.random() * (b - a) end
+local function clamp(v, a, b) return math.max(a, math.min(b, v)) end
+local function w2v(x, y, f) return Vector3.new(x * S, y * S, -f * S) end
+
+---------------------------------------------------------------- default avatar out of the way
+local function hideCharacter(ch)
+	task.defer(function()
+		local root = ch:WaitForChild("HumanoidRootPart", 5)
+		if root then root.Anchored = true; ch:PivotTo(CFrame.new(0, -2000, 0)) end
+	end)
+end
+if player.Character then hideCharacter(player.Character) end
+player.CharacterAdded:Connect(hideCharacter)
+task.spawn(function()
+	for _ = 1, 10 do
+		if pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false) end) then break end
+		task.wait(0.5)
+	end
+end)
+camera.CameraType = Enum.CameraType.Scriptable
+
+---------------------------------------------------------------- part helpers
+local world = Instance.new("Folder"); world.Name = "InterstateWorld"; world.Parent = Workspace
+
+local function mk(parent, size, cf, color, mat, o)
+	local p = Instance.new("Part")
+	p.Anchored = true; p.CanCollide = false; p.CanTouch = false; p.CanQuery = false
+	p.Size = size * S; p.CFrame = cf; p.Color = color
+	p.Material = mat or Enum.Material.SmoothPlastic
+	p.TopSurface = Enum.SurfaceType.Smooth; p.BottomSurface = Enum.SurfaceType.Smooth
+	if o then
+		if o.tr then p.Transparency = o.tr end
+		if o.refl then p.Reflectance = o.refl end
+		if o.shape then p.Shape = o.shape end
+		if o.shadow == false then p.CastShadow = false end
+	end
+	p.Parent = parent
+	return p
+end
+
+-- part welded to a car root (offsets in metres, optional X tilt in degrees)
+local function cp(car, sx, sy, sz, ox, oy, oz, color, mat, o)
+	local rot = CFrame.new()
+	if o and o.rx then rot = CFrame.Angles(math.rad(o.rx), 0, 0) end
+	local p = mk(car.model, Vector3.new(sx, sy, sz), car.root.CFrame * CFrame.new(ox * S, oy * S, oz * S) * rot, color, mat, o)
+	p.Anchored = false; p.Massless = true
+	local wc = Instance.new("WeldConstraint"); wc.Part0 = car.root; wc.Part1 = p; wc.Parent = p
+	return p
+end
+
+local GLASS = Color3.fromRGB(18, 28, 40)
+local BLACK = Color3.fromRGB(14, 15, 17)
+local AMBER_OFF, AMBER_ON = Color3.fromRGB(70, 42, 8), Color3.fromRGB(255, 160, 30)
+
+local function wheels(car, x, zf, zr, r, w)
+	for _, sx in ipairs({ -x, x }) do
+		for _, z in ipairs({ zf, zr }) do
+			local p = cp(car, w, r * 2, r * 2, sx, r, z, BLACK, Enum.Material.SmoothPlastic, { shape = Enum.PartType.Cylinder })
+			local rim = cp(car, w + 0.02, r * 1.1, r * 1.1, sx + (sx > 0 and 0.01 or -0.01), r, z, Color3.fromRGB(150, 155, 160), Enum.Material.Metal, { shape = Enum.PartType.Cylinder })
+			rim.Name = "Rim"
+		end
+	end
+end
+
+local function lights(car, w, zF, zR, yH, yT, isPlayer)
+	for _, sx in ipairs({ -1, 1 }) do
+		cp(car, w * 0.22, 0.13, 0.06, sx * w * 0.32, yH, zF, Color3.fromRGB(255, 250, 225), Enum.Material.Neon)
+		local t = cp(car, w * 0.22, 0.13, 0.06, sx * w * 0.32, yT, zR, Color3.fromRGB(255, 30, 20), Enum.Material.Neon)
+		t.Name = "Tail"
+		local sig = cp(car, 0.18, 0.1, 0.06, sx * (w * 0.5 - 0.12), yT, zR, AMBER_OFF, Enum.Material.Neon)
+		local sigF = cp(car, 0.18, 0.1, 0.06, sx * (w * 0.5 - 0.12), yH, zF, AMBER_OFF, Enum.Material.Neon)
+		if sx < 0 then car.sigL = { sig, sigF } else car.sigR = { sig, sigF } end
+	end
+end
+
+---------------------------------------------------------------- car builders (metres; the car faces -Z)
+local BUILD = {}
+function BUILD.sedan(car, c)
+	cp(car, 1.85, 0.62, 4.6, 0, 0.58, 0, c)
+	cp(car, 1.62, 0.5, 2.3, 0, 1.1, 0.35, GLASS, Enum.Material.Glass, { refl = 0.15 })
+	cp(car, 1.64, 0.07, 1.9, 0, 1.37, 0.35, c)
+	cp(car, 1.8, 0.22, 0.15, 0, 0.36, -2.3, BLACK); cp(car, 1.8, 0.22, 0.15, 0, 0.36, 2.3, BLACK)
+	wheels(car, 0.88, -1.4, 1.4, 0.34, 0.26)
+	lights(car, 1.85, -2.31, 2.31, 0.66, 0.72)
+end
+function BUILD.suv(car, c)
+	cp(car, 1.95, 0.8, 4.7, 0, 0.78, 0, c)
+	cp(car, 1.75, 0.65, 3.3, 0, 1.5, 0.4, GLASS, Enum.Material.Glass, { refl = 0.15 })
+	cp(car, 1.78, 0.08, 3.0, 0, 1.86, 0.4, c)
+	cp(car, 1.9, 0.25, 0.15, 0, 0.45, -2.35, BLACK); cp(car, 1.9, 0.25, 0.15, 0, 0.45, 2.35, BLACK)
+	wheels(car, 0.92, -1.45, 1.45, 0.4, 0.3)
+	lights(car, 1.95, -2.36, 2.36, 0.85, 0.9)
+end
+function BUILD.van(car, c)
+	cp(car, 2.0, 1.9, 5.2, 0, 1.3, 0, c)
+	cp(car, 1.8, 0.55, 0.12, 0, 1.55, -2.62, GLASS, Enum.Material.Glass, { refl = 0.15 })
+	cp(car, 2.02, 0.12, 5.0, 0, 0.55, 0, BLACK)
+	wheels(car, 0.95, -1.6, 1.6, 0.38, 0.28)
+	lights(car, 2.0, -2.61, 2.61, 0.75, 0.85)
+end
+function BUILD.semi(car, c)
+	cp(car, 2.5, 2.7, 2.4, 0, 2.0, -5.9, c)
+	cp(car, 2.3, 0.9, 0.12, 0, 2.55, -7.12, GLASS, Enum.Material.Glass, { refl = 0.15 })
+	cp(car, 2.55, 3.1, 11.6, 0, 2.55, 2.1, Color3.fromRGB(222, 226, 230))
+	cp(car, 2.1, 0.5, 14.5, 0, 0.75, -0.4, BLACK)
+	for _, z in ipairs({ -5.6, -4.2, 3.2, 4.6, 6.0 }) do wheels(car, 1.1, z, z, 0.5, 0.34) end
+	lights(car, 2.5, -7.12, 7.9, 1.1, 1.1)
+end
+function BUILD.vanta(car, c) -- balanced coupe
+	cp(car, 1.88, 0.5, 4.5, 0, 0.5, 0, c)
+	cp(car, 1.8, 0.1, 1.5, 0, 0.78, -1.45, c, nil, { rx = -6 })
+	cp(car, 1.6, 0.42, 1.9, 0, 0.98, 0.35, GLASS, Enum.Material.Glass, { refl = 0.2 })
+	cp(car, 1.62, 0.06, 1.3, 0, 1.2, 0.45, c)
+	cp(car, 1.7, 0.05, 0.4, 0, 1.0, 2.2, BLACK) -- lip spoiler
+	cp(car, 1.84, 0.2, 0.15, 0, 0.32, -2.27, BLACK); cp(car, 1.84, 0.2, 0.15, 0, 0.32, 2.27, BLACK)
+	wheels(car, 0.9, -1.4, 1.38, 0.35, 0.28)
+	lights(car, 1.88, -2.26, 2.26, 0.58, 0.64, true)
+end
+function BUILD.strada(car, c) -- muscle car with twin stripes
+	cp(car, 1.95, 0.6, 4.8, 0, 0.62, 0, c)
+	cp(car, 1.7, 0.45, 2.0, 0, 1.12, 0.55, GLASS, Enum.Material.Glass, { refl = 0.15 })
+	cp(car, 1.72, 0.07, 1.5, 0, 1.36, 0.6, c)
+	cp(car, 0.4, 0.05, 4.8, -0.3, 0.945, 0, Color3.fromRGB(240, 240, 235)); cp(car, 0.4, 0.05, 4.8, 0.3, 0.945, 0, Color3.fromRGB(240, 240, 235))
+	cp(car, 0.7, 0.14, 0.9, 0, 1.0, -1.3, BLACK) -- hood scoop
+	cp(car, 1.9, 0.24, 0.16, 0, 0.38, -2.4, BLACK); cp(car, 1.9, 0.24, 0.16, 0, 0.38, 2.4, BLACK)
+	wheels(car, 0.95, -1.5, 1.5, 0.37, 0.32)
+	lights(car, 1.95, -2.41, 2.41, 0.7, 0.76, true)
+end
+function BUILD.or1(car, c) -- low hypercar: carbon tub, glass canopy, wing, light blade
+	local dark = Color3.fromRGB(24, 26, 29)
+	cp(car, 2.0, 0.34, 4.6, 0, 0.42, 0, c)
+	cp(car, 1.9, 0.07, 1.7, 0, 0.58, -1.75, c, nil, { rx = -7 }) -- sloping nose
+	cp(car, 1.5, 0.06, 1.6, 0, 0.74, -0.4, GLASS, Enum.Material.Glass, { rx = 24, refl = 0.3 }) -- windscreen
+	cp(car, 1.35, 0.5, 1.6, 0, 0.78, 0.45, GLASS, Enum.Material.Glass, { refl = 0.3 })
+	cp(car, 1.3, 0.05, 1.4, 0, 1.04, 0.5, dark)
+	cp(car, 1.9, 0.3, 1.3, 0, 0.62, 1.85, c) -- rear deck
+	cp(car, 2.1, 0.06, 0.55, 0, 1.12, 2.15, dark) -- wing blade
+	cp(car, 0.05, 0.32, 0.55, -0.98, 0.95, 2.15, dark); cp(car, 0.05, 0.32, 0.55, 0.98, 0.95, 2.15, dark)
+	cp(car, 2.04, 0.1, 0.2, 0, 0.2, -2.25, dark); cp(car, 2.04, 0.12, 0.2, 0, 0.22, 2.3, dark)
+	cp(car, 0.5, 0.03, 4.4, -0.55, 0.605, 0, Color3.fromRGB(190, 20, 20)); cp(car, 0.5, 0.03, 4.4, 0.55, 0.605, 0, Color3.fromRGB(190, 20, 20))
+	wheels(car, 0.99, -1.38, 1.4, 0.36, 0.32)
+	for _, sx in ipairs({ -1, 1 }) do
+		cp(car, 0.6, 0.07, 0.05, sx * 0.62, 0.52, -2.31, Color3.fromRGB(255, 250, 225), Enum.Material.Neon)
+		local sig = cp(car, 0.18, 0.08, 0.05, sx * 0.93, 0.5, -2.31, AMBER_OFF, Enum.Material.Neon)
+		local sigR = cp(car, 0.18, 0.08, 0.05, sx * 0.93, 0.5, 2.31, AMBER_OFF, Enum.Material.Neon)
+		if sx < 0 then car.sigL = { sig, sigR } else car.sigR = { sig, sigR } end
+	end
+	local t = cp(car, 1.7, 0.07, 0.05, 0, 0.62, 2.31, Color3.fromRGB(255, 30, 20), Enum.Material.Neon); t.Name = "Tail"
+end
+
+local DIM = { sedan = { L = 4.6, W = 1.85 }, suv = { L = 4.7, W = 1.95 }, van = { L = 5.2, W = 2.0 }, semi = { L = 14.5, W = 2.5 },
+	vanta = { L = 4.5, W = 1.88 }, strada = { L = 4.8, W = 1.95 }, or1 = { L = 4.66, W = 2.04 } }
+
+local function buildCar(kind, color)
+	local car = { kind = kind, L = DIM[kind].L, W = DIM[kind].W }
+	car.model = Instance.new("Model"); car.model.Name = "Car_" .. kind
+	car.root = mk(car.model, Vector3.new(0.4, 0.3, 0.4), CFrame.new(0, 300, 0), color, Enum.Material.SmoothPlastic, { tr = 1 })
+	car.model.PrimaryPart = car.root
+	BUILD[kind](car, color)
+	car.model.Parent = world
+	return car
+end
+
+local CARS = {
+	{ id = "vanta", name = "Vanta GT", top = 125, acc = 9, color = Color3.fromRGB(210, 40, 36), blurb = "Balanced starter coupe" },
+	{ id = "strada", name = "Strada R", top = 133, acc = 10.5, color = Color3.fromRGB(24, 25, 28), blurb = "Muscle car with twin stripes" },
+	{ id = "or1", name = "OR-1", top = 195, acc = 17, color = Color3.fromRGB(32, 34, 38), blurb = "Hypercar. The fastest car in the garage" },
+}
+
+---------------------------------------------------------------- lighting
+local atmosphere = Instance.new("Atmosphere"); atmosphere.Parent = Lighting
+local cc = Instance.new("ColorCorrectionEffect"); cc.Parent = Lighting
+local bloom = Instance.new("BloomEffect"); bloom.Intensity = 0.35; bloom.Size = 24; bloom.Threshold = 1.6; bloom.Parent = Lighting
+local sun = Instance.new("SunRaysEffect"); sun.Intensity = 0.08; sun.Parent = Lighting
+local rainOn = false
+local function applyWeather()
+	Lighting.GeometryTechnology = Lighting.GeometryTechnology
+	Lighting.ClockTime = rainOn and 17.2 or 18.4
+	Lighting.Brightness = rainOn and 1.4 or 2.4
+	Lighting.EnvironmentDiffuseScale = 1; Lighting.EnvironmentSpecularScale = 1
+	Lighting.Ambient = rainOn and Color3.fromRGB(70, 74, 84) or Color3.fromRGB(86, 74, 78)
+	Lighting.OutdoorAmbient = rainOn and Color3.fromRGB(80, 86, 98) or Color3.fromRGB(120, 100, 98)
+	Lighting.ColorShift_Top = Color3.new(0, 0, 0)
+	Lighting.ExposureCompensation = rainOn and -0.2 or 0
+	atmosphere.Density = rainOn and 0.5 or 0.3; atmosphere.Offset = rainOn and 0.1 or 0.25
+	atmosphere.Color = rainOn and Color3.fromRGB(150, 156, 168) or Color3.fromRGB(230, 170, 140)
+	atmosphere.Decay = rainOn and Color3.fromRGB(100, 104, 116) or Color3.fromRGB(150, 100, 90)
+	atmosphere.Glare = rainOn and 0 or 0.3; atmosphere.Haze = rainOn and 3 or 1.6
+	cc.Saturation = rainOn and -0.25 or 0.05; cc.Contrast = 0.1; cc.TintColor = rainOn and Color3.fromRGB(215, 225, 240) or Color3.fromRGB(255, 244, 232)
+end
+applyWeather()
+
+---------------------------------------------------------------- road, scenery
+local segs = {}
+local roadParts = {}
+local rng = Random.new(7)
+local function buildSegment()
+	local m = Instance.new("Model"); m.Name = "Segment"
+	local L = SEG_LEN
+	local road = mk(m, Vector3.new(ROAD_HALF * 2 + 6, 0.2, L), CFrame.new(0, -0.1 * S, 0), Color3.fromRGB(46, 47, 50), Enum.Material.Asphalt)
+	road.Name = "Road"; roadParts[#roadParts + 1] = road
+	m.PrimaryPart = road
+	mk(m, Vector3.new(300, 0.3, L), CFrame.new(0, -0.35 * S, 0), Color3.fromRGB(70, 82, 56), Enum.Material.Grass)
+	for _, sx in ipairs({ -1, 1 }) do
+		mk(m, Vector3.new(0.18, 0.02, L), CFrame.new(sx * (ROAD_HALF - 0.4) * S, 0.005 * S, 0), Color3.fromRGB(235, 235, 225), nil, { shadow = false })
+		mk(m, Vector3.new(0.14, 0.7, L), CFrame.new(sx * (ROAD_HALF + 2.2) * S, 0.35 * S, 0), Color3.fromRGB(120, 124, 128), Enum.Material.Metal)
+	end
+	for i = 1, 3 do
+		for d = 0, 3 do
+			mk(m, Vector3.new(0.14, 0.02, 3.2), CFrame.new((i - 2) * LANE_W * S, 0.005 * S, (-L / 2 + 5 + d * (L / 4)) * S), Color3.fromRGB(235, 235, 225), nil, { shadow = false })
+		end
+	end
+	local lx = (rng:NextInteger(0, 1) == 0 and -1 or 1) * (ROAD_HALF + 3.4)
+	mk(m, Vector3.new(0.3, 9, 0.3), CFrame.new(lx * S, 4.5 * S, 10 * S), Color3.fromRGB(70, 72, 76), Enum.Material.Metal)
+	mk(m, Vector3.new(0.3, 0.3, 2.6), CFrame.new((lx - math.sign(lx) * 1.1) * S, 9.1 * S, 10 * S), Color3.fromRGB(70, 72, 76), Enum.Material.Metal)
+	local head = mk(m, Vector3.new(0.5, 0.2, 0.9), CFrame.new((lx - math.sign(lx) * 2.1) * S, 9 * S, 10 * S), Color3.fromRGB(255, 214, 150), Enum.Material.Neon)
+	local pl = Instance.new("PointLight"); pl.Range = 38; pl.Brightness = 1.6; pl.Color = Color3.fromRGB(255, 200, 140); pl.Parent = head
+	for _ = 1, 5 do
+		local side = rng:NextInteger(0, 1) == 0 and -1 or 1
+		local tx, tz, h = side * rng:NextNumber(ROAD_HALF + 6, ROAD_HALF + 45), rng:NextNumber(-L / 2, L / 2), rng:NextNumber(5, 9)
+		mk(m, Vector3.new(0.5, h * 0.5, 0.5), CFrame.new(tx * S, h * 0.25 * S, tz * S), Color3.fromRGB(70, 50, 36), Enum.Material.Wood)
+		mk(m, Vector3.new(h * 0.65, h * 0.8, h * 0.65), CFrame.new(tx * S, h * 0.75 * S, tz * S), Color3.fromRGB(34, 72, 44), Enum.Material.Grass, { shape = Enum.PartType.Ball })
+	end
+	m.Parent = world
+	return m
+end
+for i = 1, SEG_COUNT do segs[i] = { model = buildSegment(), k = i - 1 } end
+local function placeSegment(s, k) s.k = k; s.model:PivotTo(CFrame.new(0, 0, -(k + 0.5) * SEG_LEN * S)) end
+for i, s in ipairs(segs) do placeSegment(s, i - 4) end
+local function updateRoad(f)
+	local cur = math.floor(f / SEG_LEN)
+	for _, s in ipairs(segs) do
+		if s.k < cur - 3 then placeSegment(s, s.k + SEG_COUNT) end
+	end
+end
+local function setWet(on)
+	for _, r in ipairs(roadParts) do r.Reflectance = on and 0.22 or 0; r.Color = on and Color3.fromRGB(34, 36, 40) or Color3.fromRGB(46, 47, 50) end
+end
+
+-- rain: an emitter that follows the camera and leans back with speed
+local rainPart = Instance.new("Part"); rainPart.Anchored = true; rainPart.CanCollide = false; rainPart.CanQuery = false
+rainPart.Transparency = 1; rainPart.Size = Vector3.new(160, 1, 160); rainPart.Parent = world
+local rain = Instance.new("ParticleEmitter")
+rain.Rate = 0; rain.Lifetime = NumberRange.new(0.5, 0.7); rain.EmissionDirection = Enum.NormalId.Bottom
+rain.Speed = NumberRange.new(150, 170); rain.Size = NumberSequence.new(0.18); rain.Transparency = NumberSequence.new(0.55)
+rain.Color = ColorSequence.new(Color3.fromRGB(200, 215, 235)); rain.LightEmission = 0.4
+rain.Orientation = Enum.ParticleOrientation.VelocityParallel; rain.Squash = NumberSequence.new(-6)
+rain.Parent = rainPart
+
+---------------------------------------------------------------- game state
+local keys = {}
+local state = "menu" -- menu | play | over | paused
+local sel = 2
+local P, playerCar, traffic = nil, nil, {}
+local hist, histT, rewinding = {}, 0, nil
+local camMode, camPos, shake = 0, nil, 0
+local best = 0
+local ind = 0 -- -1 left, 1 right
+local indT = 0
+local cockpit = {}
+local cockpitOn = false
+
+local function newP()
+	return { x = laneX(2), v = 0, f = 0, steer = 0, vx = 0, yaw = 0, damage = 0, score = 0, combo = 1, comboT = 0, near = 0, crashed = false, t = 0 }
+end
+P = newP()
+
+local function spawnTraffic(f, lane)
+	local r = math.random()
+	local kind = r < 0.5 and "sedan" or r < 0.75 and "suv" or r < 0.88 and "van" or "semi"
+	lane = lane or math.random(1, 4)
+	for _, c in ipairs(traffic) do
+		if c.x == laneX(lane) and math.abs(c.f - f) < 34 then return nil end
+		if c.change and c.change.to == lane and math.abs(c.f - f) < 34 then return nil end
+	end
+	local hue = math.random()
+	local col = kind == "semi" and Color3.fromHSV(hue, 0.55, 0.7) or Color3.fromHSV(hue, math.random() < 0.4 and 0.05 or 0.6, math.random() < 0.4 and 0.35 or 0.8)
+	local car = buildCar(kind, col)
+	car.f = f; car.lane = lane; car.x = laneX(lane)
+	car.desired = (kind == "semi" and rnd(17, 22) or rnd(19, 31)) + (5 - lane) * 1.4
+	car.v = car.desired; car.rel = f - P.f; car.yawv = 0
+	traffic[#traffic + 1] = car
+	return car
+end
+
+local function clearTraffic()
+	for _, c in ipairs(traffic) do c.model:Destroy() end
+	traffic = {}
+end
+
+---------------------------------------------------------------- UI
+local gui = Instance.new("ScreenGui"); gui.Name = "InterstateUI"; gui.ResetOnSpawn = false; gui.IgnoreGuiInset = true
+gui.Parent = player:WaitForChild("PlayerGui")
+local function label(parent, props)
+	local l = Instance.new("TextLabel"); l.BackgroundTransparency = 1; l.Font = Enum.Font.GothamBlack
+	l.TextColor3 = Color3.new(1, 1, 1); l.TextStrokeTransparency = 0.55; l.TextScaled = false
+	for k, v in pairs(props) do l[k] = v end
+	l.Parent = parent
+	return l
+end
+local function button(parent, props, cb)
+	local b = Instance.new("TextButton"); b.Font = Enum.Font.GothamBlack; b.TextColor3 = Color3.fromRGB(27, 20, 4)
+	b.BackgroundColor3 = Color3.fromRGB(245, 181, 36); b.AutoButtonColor = true
+	for k, v in pairs(props) do b[k] = v end
+	local uc = Instance.new("UICorner"); uc.CornerRadius = UDim.new(0, 10); uc.Parent = b
+	b.Parent = parent; b.MouseButton1Click:Connect(cb)
+	return b
+end
+
+-- HUD
+local hud = Instance.new("Frame"); hud.Size = UDim2.fromScale(1, 1); hud.BackgroundTransparency = 1; hud.Visible = false; hud.Parent = gui
+local scoreL = label(hud, { Size = UDim2.fromOffset(300, 40), Position = UDim2.fromOffset(20, 16), TextSize = 30, TextXAlignment = Enum.TextXAlignment.Left, Text = "0" })
+local distL = label(hud, { Size = UDim2.fromOffset(300, 22), Position = UDim2.fromOffset(20, 54), TextSize = 16, TextColor3 = Color3.fromRGB(200, 210, 200), TextXAlignment = Enum.TextXAlignment.Left, Text = "0.00 mi" })
+local comboL = label(hud, { Size = UDim2.fromOffset(300, 30), Position = UDim2.fromOffset(20, 78), TextSize = 22, TextColor3 = Color3.fromRGB(245, 181, 36), TextXAlignment = Enum.TextXAlignment.Left, Text = "" })
+local speedL = label(hud, { Size = UDim2.fromOffset(240, 70), AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -28, 1, -56), TextSize = 64, TextXAlignment = Enum.TextXAlignment.Right, Text = "0" })
+label(hud, { Size = UDim2.fromOffset(240, 20), AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -28, 1, -34), TextSize = 16, TextColor3 = Color3.fromRGB(245, 181, 36), TextXAlignment = Enum.TextXAlignment.Right, Text = "MPH" })
+local dmgBack = Instance.new("Frame"); dmgBack.Size = UDim2.fromOffset(220, 12); dmgBack.Position = UDim2.fromOffset(20, 112); dmgBack.BackgroundColor3 = Color3.fromRGB(20, 22, 26); dmgBack.BorderSizePixel = 0; dmgBack.Parent = hud
+local dmgBar = Instance.new("Frame"); dmgBar.Size = UDim2.fromScale(0, 1); dmgBar.BackgroundColor3 = Color3.fromRGB(226, 54, 44); dmgBar.BorderSizePixel = 0; dmgBar.Parent = dmgBack
+label(hud, { Size = UDim2.fromOffset(200, 16), Position = UDim2.fromOffset(20, 126), TextSize = 12, TextColor3 = Color3.fromRGB(200, 205, 210), TextXAlignment = Enum.TextXAlignment.Left, Text = "DAMAGE" })
+local indL = label(hud, { Size = UDim2.fromOffset(60, 50), AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, -50, 1, -24), TextSize = 44, TextColor3 = Color3.fromRGB(60, 50, 30), Text = "◀" })
+local indR = label(hud, { Size = UDim2.fromOffset(60, 50), AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 50, 1, -24), TextSize = 44, TextColor3 = Color3.fromRGB(60, 50, 30), Text = "▶" })
+local toast = label(hud, { Size = UDim2.fromOffset(600, 40), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.18, 0), TextSize = 30, TextColor3 = Color3.fromRGB(255, 243, 176), Text = "", TextTransparency = 1 })
+local toastT = 0
+local function say(text, col) toast.Text = text; toast.TextColor3 = col or Color3.fromRGB(255, 243, 176); toastT = 1.4 end
+local hint = label(hud, { Size = UDim2.fromOffset(700, 20), AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -4), TextSize = 13, TextColor3 = Color3.fromRGB(190, 198, 205),
+	Text = "W/S gas & brake   A/D steer   Q/E indicate   R rewind 7 s   C camera   T rain   P pause" })
+local rewLbl = label(hud, { Size = UDim2.fromOffset(500, 60), AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.12, 0), TextSize = 46, TextColor3 = Color3.fromRGB(190, 225, 255), Text = "◀◀ REWIND", Visible = false })
+local rewTint = Instance.new("Frame"); rewTint.Size = UDim2.fromScale(1, 1); rewTint.BackgroundColor3 = Color3.fromRGB(60, 120, 200); rewTint.BackgroundTransparency = 1; rewTint.BorderSizePixel = 0; rewTint.Parent = gui
+
+-- menu
+local menu = Instance.new("Frame"); menu.Size = UDim2.fromScale(1, 1); menu.BackgroundTransparency = 1; menu.Parent = gui
+local panel = Instance.new("Frame"); panel.Size = UDim2.fromOffset(420, 330); panel.Position = UDim2.new(0, 40, 0.5, -165)
+panel.BackgroundColor3 = Color3.fromRGB(8, 12, 16); panel.BackgroundTransparency = 0.2; panel.BorderSizePixel = 0; panel.Parent = menu
+local pc = Instance.new("UICorner"); pc.CornerRadius = UDim.new(0, 14); pc.Parent = panel
+label(panel, { Size = UDim2.new(1, -30, 0, 44), Position = UDim2.fromOffset(18, 14), TextSize = 36, TextXAlignment = Enum.TextXAlignment.Left, Text = "INTERSTATE WEAVE" })
+label(panel, { Size = UDim2.new(1, -30, 0, 22), Position = UDim2.fromOffset(18, 56), TextSize = 15, TextColor3 = Color3.fromRGB(200, 210, 200), TextXAlignment = Enum.TextXAlignment.Left, Font = Enum.Font.GothamMedium, Text = "Weave through traffic. Close calls build your combo." })
+local carName = label(panel, { Size = UDim2.new(1, -150, 0, 34), Position = UDim2.fromOffset(75, 98), TextSize = 28, Text = "" })
+local carInfo = label(panel, { Size = UDim2.new(1, -30, 0, 40), Position = UDim2.fromOffset(18, 134), TextSize = 14, TextColor3 = Color3.fromRGB(200, 210, 200), Font = Enum.Font.GothamMedium, TextWrapped = true, Text = "" })
+local rainBtn
+local function refreshMenu()
+	local c = CARS[sel]
+	carName.Text = c.name
+	carInfo.Text = ("%d mph top speed   ·   %s"):format(c.top, c.blurb)
+	if rainBtn then rainBtn.Text = rainOn and "Weather: RAIN" or "Weather: Clear" end
+end
+local cars3d = {}
+local function showCar()
+	if playerCar then playerCar.model:Destroy() end
+	local c = CARS[sel]
+	playerCar = buildCar(c.id, c.color)
+	P.top = c.top * MPH; P.acc = c.acc
+end
+local function setCar(d) sel = (sel - 1 + d) % #CARS + 1; showCar(); refreshMenu() end
+button(panel, { Size = UDim2.fromOffset(46, 36), Position = UDim2.fromOffset(18, 98), TextSize = 22, Text = "◀" }, function() setCar(-1) end)
+button(panel, { Size = UDim2.fromOffset(46, 36), Position = UDim2.new(1, -64, 0, 98), TextSize = 22, Text = "▶" }, function() setCar(1) end)
+rainBtn = button(panel, { Size = UDim2.new(1, -36, 0, 40), Position = UDim2.fromOffset(18, 190), TextSize = 18, BackgroundColor3 = Color3.fromRGB(70, 80, 96), TextColor3 = Color3.new(1, 1, 1), Text = "" },
+	function() rainOn = not rainOn; applyWeather(); setWet(rainOn); refreshMenu() end)
+local driveBtn
+local startGame
+
+driveBtn = button(panel, { Size = UDim2.new(1, -36, 0, 54), Position = UDim2.fromOffset(18, 250), TextSize = 26, Text = "DRIVE" }, function() startGame() end)
+
+-- game over
+local over = Instance.new("Frame"); over.Size = UDim2.fromScale(1, 1); over.BackgroundColor3 = Color3.fromRGB(5, 8, 11); over.BackgroundTransparency = 0.35; over.Visible = false; over.Parent = gui
+local overT = label(over, { Size = UDim2.fromOffset(700, 60), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.36), TextSize = 56, Text = "WRECKED" })
+local overS = label(over, { Size = UDim2.fromOffset(700, 40), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.46), TextSize = 28, TextColor3 = Color3.fromRGB(245, 181, 36), Text = "" })
+label(over, { Size = UDim2.fromOffset(700, 24), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.53), TextSize = 18, Font = Enum.Font.GothamMedium, Text = "R rewind 7 seconds   ·   Enter / click to drive again   ·   M menu" })
+local againBtn = button(over, { Size = UDim2.fromOffset(260, 56), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.62), TextSize = 24, Text = "DRIVE AGAIN" }, function() startGame() end)
+
+---------------------------------------------------------------- cockpit (camera-attached dash)
+local function ensureCockpit()
+	if cockpit.dash then return end
+	local f = Instance.new("Folder"); f.Name = "Cockpit"; f.Parent = world
+	cockpit.dash = mk(f, Vector3.new(1.9, 0.5, 0.7), CFrame.new(), Color3.fromRGB(16, 17, 20), Enum.Material.SmoothPlastic, { shadow = false })
+	cockpit.bin = mk(f, Vector3.new(0.7, 0.26, 0.16), CFrame.new(), Color3.fromRGB(8, 24, 20), Enum.Material.Neon, { shadow = false })
+	cockpit.wheel = mk(f, Vector3.new(0.05, 0.36, 0.36), CFrame.new(), Color3.fromRGB(22, 23, 26), Enum.Material.SmoothPlastic, { shape = Enum.PartType.Cylinder, shadow = false })
+	cockpit.pillarL = mk(f, Vector3.new(0.12, 0.9, 0.12), CFrame.new(), Color3.fromRGB(16, 17, 20), Enum.Material.SmoothPlastic, { shadow = false })
+	cockpit.pillarR = mk(f, Vector3.new(0.12, 0.9, 0.12), CFrame.new(), Color3.fromRGB(16, 17, 20), Enum.Material.SmoothPlastic, { shadow = false })
+	cockpit.folder = f
+end
+local function setCarVisible(car, vis)
+	for _, d in ipairs(car.model:GetDescendants()) do
+		if d:IsA("BasePart") and d ~= car.root then d.LocalTransparencyModifier = vis and 0 or 1 end
+	end
+end
+local function layoutCockpit(cf)
+	ensureCockpit()
+	local function at(p, off, rot) p.CFrame = cf * CFrame.new(off * S) * (rot or CFrame.new()) end
+	at(cockpit.dash, Vector3.new(0, -0.62, -1.05))
+	at(cockpit.bin, Vector3.new(-0.4, -0.32, -0.86), CFrame.Angles(math.rad(-18), 0, 0))
+	at(cockpit.wheel, Vector3.new(-0.4, -0.5, -0.7), CFrame.Angles(0, math.rad(90), 0) * CFrame.Angles(math.rad(-65), 0, math.rad(P.steer * -80)))
+	at(cockpit.pillarL, Vector3.new(-0.9, 0.1, -0.7), CFrame.Angles(0, 0, math.rad(-25)))
+	at(cockpit.pillarR, Vector3.new(0.9, 0.1, -0.7), CFrame.Angles(0, 0, math.rad(25)))
+end
+
+---------------------------------------------------------------- snapshots / rewind
+local function snapshot()
+	local s = { p = {}, cars = {}, ind = ind }
+	for k, v in pairs(P) do s.p[k] = v end
+	for _, c in ipairs(traffic) do s.cars[#s.cars + 1] = { c = c, f = c.f, x = c.x, v = c.v, lane = c.lane } end
+	return s
+end
+local function restore(s)
+	for k, v in pairs(s.p) do P[k] = v end
+	ind = s.ind
+	local alive = {}
+	for _, e in ipairs(s.cars) do e.c.f = e.f; e.c.x = e.x; e.c.v = e.v; e.c.lane = e.lane; e.c.change = nil; alive[e.c] = true end
+	for _, c in ipairs(traffic) do c.model.Parent = alive[c] and world or nil end
+end
+
+---------------------------------------------------------------- game flow
+function startGame()
+	clearTraffic()
+	P = newP(); local c = CARS[sel]; P.top = c.top * MPH; P.acc = c.acc
+	P.v = 12
+	if not playerCar or playerCar.kind ~= c.id then showCar() end
+	for _ = 1, 40 do spawnTraffic(rnd(30, 650)) end
+	hist = {}; histT = 0; rewinding = nil; ind = 0; camPos = nil
+	state = "play"; menu.Visible = false; over.Visible = false; hud.Visible = true
+	say("GO!", Color3.fromRGB(140, 255, 160))
+end
+local function toMenu()
+	state = "menu"; clearTraffic(); P = newP(); showCar(); menu.Visible = true; over.Visible = false; hud.Visible = false
+	refreshMenu(); rewinding = nil; rewTint.BackgroundTransparency = 1
+end
+local function wreck(why)
+	if P.crashed then return end
+	P.crashed = true; P.v = P.v * 0.6; shake = 1.5
+	local e = Instance.new("Explosion"); e.BlastPressure = 0; e.BlastRadius = 1; e.DestroyJointRadiusPercent = 0
+	e.Position = playerCar.root.Position + Vector3.new(0, 3, 0); e.Parent = Workspace
+	P.crashT = 0
+	overT.Text = why or "WRECKED"
+end
+local function finishGame()
+	state = "over"
+	local sc = math.floor(P.score)
+	best = math.max(best, sc)
+	overS.Text = ("Score %s    Best %s    Distance %.2f mi"):format(tostring(sc), tostring(best), P.f / 1609.34)
+	over.Visible = true
+end
+local function startRewind()
+	if #hist < 4 or rewinding then return end
+	rewinding = { i = #hist, acc = 0 }
+	rewLbl.Visible = true
+end
+
+---------------------------------------------------------------- input
+UIS.InputBegan:Connect(function(input, gp)
+	if gp then return end
+	keys[input.KeyCode] = true
+	local k = input.KeyCode
+	if k == Enum.KeyCode.R and (state == "play" or state == "over") then
+		if state == "over" then over.Visible = false; state = "play"; P.crashed = false; P.damage = math.min(P.damage, 0.5) end
+		startRewind()
+	elseif k == Enum.KeyCode.C and state ~= "menu" then camMode = 1 - camMode
+	elseif k == Enum.KeyCode.T then rainOn = not rainOn; applyWeather(); setWet(rainOn); refreshMenu()
+	elseif k == Enum.KeyCode.Q and state == "play" then ind = (ind == -1) and 0 or -1; indT = 0
+		for _, c in ipairs(traffic) do c.yr = nil end
+	elseif k == Enum.KeyCode.E and state == "play" then ind = (ind == 1) and 0 or 1; indT = 0
+		for _, c in ipairs(traffic) do c.yr = nil end
+	elseif k == Enum.KeyCode.P and (state == "play" or state == "paused") then state = (state == "play") and "paused" or "play"
+		say(state == "paused" and "PAUSED" or "", Color3.new(1, 1, 1))
+	elseif k == Enum.KeyCode.Return then
+		if state == "menu" or state == "over" then startGame() end
+	elseif k == Enum.KeyCode.M and state == "over" then toMenu()
+	elseif state == "menu" and (k == Enum.KeyCode.Left or k == Enum.KeyCode.A) then setCar(-1)
+	elseif state == "menu" and (k == Enum.KeyCode.Right or k == Enum.KeyCode.D) then setCar(1)
+	end
+end)
+UIS.InputEnded:Connect(function(input) keys[input.KeyCode] = nil end)
+local function down(a, b) return keys[a] or (b and keys[b]) end
+
+---------------------------------------------------------------- simulation
+local function stepPlayer(dt)
+	local wet = rainOn and 0.85 or 1
+	local throttle = (down(Enum.KeyCode.W, Enum.KeyCode.Up) and 1 or 0)
+	local brake = (down(Enum.KeyCode.S, Enum.KeyCode.Down) and 1 or 0)
+	local str = (down(Enum.KeyCode.D, Enum.KeyCode.Right) and 1 or 0) - (down(Enum.KeyCode.A, Enum.KeyCode.Left) and 1 or 0)
+	if P.crashed then throttle, brake, str = 0, 1, 0 end
+	P.steer = P.steer + clamp(str - P.steer, -dt * 5, dt * 5)
+	local drag = 0.9 + 0.00045 * P.v * P.v
+	local a = throttle * P.acc * math.max(0, 1 - P.v / P.top) ^ 0.7 - drag - brake * 26 * wet * (P.crashed and 0.6 or 1)
+	P.v = math.max(0, P.v + a * dt)
+	local lat = 10.5 / (1 + P.v / 38) * wet
+	P.vx = P.vx + (P.steer * lat - P.vx) * math.min(1, dt * 8)
+	P.x = P.x + P.vx * dt
+	P.yaw = -math.atan(P.vx / math.max(P.v, 6))
+	P.f = P.f + P.v * dt
+	local edge = ROAD_HALF - 0.4 - 1.0
+	if math.abs(P.x) > edge then
+		P.x = clamp(P.x, -edge, edge); P.vx = 0
+		P.damage = P.damage + dt * 0.5; P.v = P.v * (1 - dt * 0.6)
+		if P.damage >= 1 and not P.crashed then wreck("WRECKED") end
+	end
+end
+
+local function stepTraffic(dt)
+	for i = #traffic, 1, -1 do
+		local c = traffic[i]
+		-- car following
+		local target = c.desired
+		for _, o in ipairs(traffic) do
+			if o ~= c and math.abs(o.x - c.x) < 2.4 and o.f > c.f then
+				local gap = o.f - c.f - (o.L + c.L) / 2
+				if gap < 8 + c.v * 1.1 then target = math.min(target, o.v - (8 + c.v - gap) * 0.05) end
+			end
+		end
+		if c.yb then target = math.min(target, math.max(0, P.v * 0.72)) end
+		c.v = c.v + clamp(target - c.v, -9 * dt, 3 * dt)
+		c.f = c.f + c.v * dt
+		-- lane change progress
+		if c.change then
+			c.change.t = c.change.t + dt / (c.change.fast and 1.8 or 2.8)
+			local t = clamp(c.change.t, 0, 1)
+			local e = t * t * (3 - 2 * t)
+			local nx = laneX(c.change.from) + (laneX(c.change.to) - laneX(c.change.from)) * e
+			c.yawv = -(nx - c.x) / math.max(dt, 1e-3) / math.max(c.v, 5)
+			c.x = nx
+			if c.change.t >= 1 then c.lane = c.change.to; c.x = laneX(c.lane); c.change = nil; c.yawv = 0 end
+		end
+		-- cull / respawn
+		if c.f < P.f - 160 or c.f > P.f + 900 then
+			c.model:Destroy(); table.remove(traffic, i)
+		end
+	end
+	-- keep the road busy
+	local want = 40
+	local tries = 0
+	while #traffic < want and tries < 6 do spawnTraffic(P.f + rnd(500, 850)); tries += 1 end
+end
+
+local function yieldToIndicator(dt)
+	if ind == 0 or state ~= "play" or P.crashed then return end
+	indT += dt
+	local pl, bd = 2, 99
+	for i = 1, 4 do local d = math.abs(P.x - laneX(i)); if d < bd then bd = d; pl = i end end
+	if bd > 2.6 then return end
+	local tl = pl + ind
+	if tl < 1 or tl > 4 then return end
+	for _, c in ipairs(traffic) do
+		if c.lane == tl and not c.change and c.f - P.f > -30 and c.f - P.f < 60 then
+			c.yr = c.yr or (indT + rnd(0.4, 1.3))
+			if indT >= c.yr then
+				local fl = tl + ind
+				local free = fl >= 1 and fl <= 4
+				if free then
+					for _, o in ipairs(traffic) do
+						if o ~= c and (o.lane == fl or (o.change and o.change.to == fl)) and math.abs(o.f - c.f) < 12 + c.v * 0.5 then free = false; break end
+					end
+				end
+				if free then c.change = { from = c.lane, to = fl, t = -0.25, fast = true }; c.yb = false
+				else c.yb = c.f - P.f < 8 end
+			end
+		elseif c.yb and c.lane ~= tl then c.yb = false end
+	end
+end
+
+local function collisions(dt)
+	if P.crashed then return end
+	for _, c in ipairs(traffic) do
+		local df = c.f - P.f
+		local reach = (c.L + playerCar.L) / 2
+		local dx = c.x - P.x
+		local wr = (c.W + playerCar.W) / 2
+		if math.abs(df) < reach and math.abs(dx) < wr then
+			local overlap = wr - math.abs(dx)
+			if overlap < 0.55 then
+				-- side swipe
+				local push = (dx >= 0 and -1 or 1)
+				P.x = P.x + push * overlap * 0.5; P.vx = push * 1.5
+				P.v = P.v * (1 - dt * 0.5)
+				P.damage = P.damage + dt * 0.55; P.combo = 1; shake = math.max(shake, 0.4)
+				if P.damage >= 1 then wreck("WRECKED") end
+			else
+				P.damage = 1; wreck(P.v - c.v > 25 and "TOTALLED" or "WRECKED")
+			end
+			return
+		end
+		-- close calls
+		local rel = df
+		if c.rel ~= nil and ((c.rel > 0 and rel <= 0) or (c.rel < 0 and rel >= 0)) and math.abs(dx) < LANE_W * 1.1 and math.abs(dx) > (c.W + playerCar.W) / 2 - 0.05 and P.v > 15 then
+			P.comboT = 3; P.combo = math.min(8, P.combo + 1); P.near += 1
+			local pts = 50 * P.combo
+			P.score += pts; say(("CLOSE CALL +%d  x%d"):format(pts, P.combo), Color3.fromRGB(255, 243, 176))
+		end
+		c.rel = rel
+	end
+end
+
+---------------------------------------------------------------- per-frame
+local function poseCar(car, x, f, yaw, extraRoll, y)
+	car.root.CFrame = CFrame.new(w2v(x, y or 0, f)) * CFrame.Angles(0, yaw, extraRoll or 0)
+end
+
+local function blinkNow() return (os.clock() % 0.7) < 0.38 end
+
+local function updateIndicators()
+	local on = blinkNow()
+	local function set(parts, lit) if parts then for _, p in ipairs(parts) do p.Color = lit and AMBER_ON or AMBER_OFF end end end
+	set(playerCar.sigL, ind == -1 and on); set(playerCar.sigR, ind == 1 and on)
+	indL.TextColor3 = (ind == -1 and on) and Color3.fromRGB(80, 255, 120) or Color3.fromRGB(60, 50, 30)
+	indR.TextColor3 = (ind == 1 and on) and Color3.fromRGB(80, 255, 120) or Color3.fromRGB(60, 50, 30)
+	for _, c in ipairs(traffic) do
+		if c.change then
+			local d = c.change.to - c.change.from
+			if not c.sigL then
+				-- traffic cars share the same builder; they only blink while changing lanes
+			end
+			if c.sigL then set(c.sigL, d < 0 and on); set(c.sigR, d > 0 and on) end
+		elseif c.sigL then set(c.sigL, false); set(c.sigR, false) end
+	end
+end
+
+local function updateCamera(dt)
+	local car = playerCar
+	local pos = car.root.Position
+	local speedFov = clamp(P.v * 0.2, 0, 30)
+	if camMode == 0 or state == "menu" then
+		if state == "menu" then
+			local a = os.clock() * 0.35
+			camera.CFrame = CFrame.lookAt(pos + Vector3.new(math.sin(a) * 26, 8, math.cos(a) * 26), pos + Vector3.new(0, 2, 0))
+			camera.FieldOfView = 55; setCarVisible(car, true)
+			if cockpit.folder then cockpit.folder.Parent = nil end
+		else
+			local back = (16 + P.v * 0.05) * 1
+			local want = pos + Vector3.new(P.x * 0.12 * S * -0.0 , 6.5, back * 1.0) + Vector3.new(-P.vx * 0.9, 0, 0)
+			camPos = camPos and camPos:Lerp(want, math.min(1, dt * 7)) or want
+			local look = pos + Vector3.new(0, 2.5, -22)
+			local c = CFrame.lookAt(camPos, look)
+			if shake > 0 then c = c * CFrame.new((math.random() - 0.5) * shake, (math.random() - 0.5) * shake, 0); shake = math.max(0, shake - dt * 2) end
+			camera.CFrame = c
+			camera.FieldOfView = 66 + speedFov
+			setCarVisible(car, true)
+			if cockpit.folder then cockpit.folder.Parent = nil end
+		end
+	else
+		local eye = car.root.CFrame * CFrame.new(-0.4 * S, 1.2 * S, -0.1 * S)
+		local c = eye
+		if shake > 0 then c = c * CFrame.new((math.random() - 0.5) * shake * 0.5, (math.random() - 0.5) * shake * 0.5, 0); shake = math.max(0, shake - dt * 2) end
+		camera.CFrame = c; camera.FieldOfView = 74 + speedFov * 0.6
+		setCarVisible(car, false)
+		layoutCockpit(c)
+		cockpit.folder.Parent = world
+	end
+end
+
+local function updateHud(dt)
+	scoreL.Text = tostring(math.floor(P.score))
+	distL.Text = ("%.2f mi"):format(P.f / 1609.34)
+	speedL.Text = tostring(math.floor(P.v / MPH + 0.5))
+	dmgBar.Size = UDim2.fromScale(clamp(P.damage, 0, 1), 1)
+	comboL.Text = P.combo > 1 and ("COMBO x%d"):format(P.combo) or ""
+	if toastT > 0 then toastT -= dt; toast.TextTransparency = clamp(1 - toastT * 0.2, 0, 1) * 0 + (toastT < 0.4 and (1 - toastT / 0.4) or 0) else toast.TextTransparency = 1 end
+end
+
+local nextHist = 0
+RunService.RenderStepped:Connect(function(dtRaw)
+	local dt = math.min(dtRaw, 0.05)
+	camera.CameraType = Enum.CameraType.Scriptable
+	if state == "menu" then
+		if not playerCar then showCar(); refreshMenu() end
+		poseCar(playerCar, laneX(2), 0, 0, 0)
+		updateRoad(0)
+		updateCamera(dt)
+		rainPart.CFrame = CFrame.new(camera.CFrame.Position + Vector3.new(0, 40, 0))
+		rain.Rate = rainOn and 900 or 0
+		return
+	end
+	if state == "paused" then return end
+
+	if rewinding then
+		-- scrub backwards through the recorded snapshots (about a second for 7 s of history)
+		rewinding.acc += dt * (#hist / 1.0)
+		local steps = math.floor(rewinding.acc); rewinding.acc -= steps
+		rewinding.i = math.max(1, rewinding.i - steps)
+		restore(hist[rewinding.i])
+		rewTint.BackgroundTransparency = 0.82
+		if rewinding.i <= 1 then
+			for k = #hist, rewinding.i + 1, -1 do hist[k] = nil end
+			rewinding = nil; rewLbl.Visible = false; rewTint.BackgroundTransparency = 1; P.crashed = false
+			say("REWIND", Color3.fromRGB(190, 225, 255))
+		end
+	else
+		if P.crashed then
+			P.crashT += dt; stepPlayer(dt); stepTraffic(dt)
+			if P.crashT > 1.4 and state == "play" then finishGame() end
+		else
+			stepPlayer(dt); yieldToIndicator(dt); stepTraffic(dt); collisions(dt)
+			P.score += P.v * dt * 0.1
+			if P.comboT > 0 then P.comboT -= dt; if P.comboT <= 0 then P.combo = 1 end end
+			-- history every 0.1 s
+			histT += dt
+			if histT >= 0.1 then
+				histT -= 0.1; hist[#hist + 1] = snapshot()
+				if #hist > REWIND_S * 10 + 1 then table.remove(hist, 1) end
+			end
+		end
+	end
+
+	updateRoad(P.f)
+	poseCar(playerCar, P.x, P.f, P.yaw, P.crashed and math.min(0.6, (P.crashT or 0) * 0.5) or 0)
+	for _, c in ipairs(traffic) do poseCar(c, c.x, c.f, c.yawv or 0, 0) end
+	updateIndicators()
+	updateCamera(dt)
+	updateHud(dt)
+	rainPart.CFrame = CFrame.new(camera.CFrame.Position + Vector3.new(0, 38, 0)) * CFrame.Angles(math.atan2(P.v * S, 150), 0, 0)
+	rain.Rate = rainOn and 900 or 0
+	rain.Speed = NumberRange.new(math.sqrt(150 ^ 2 + (P.v * S) ^ 2) - 10, math.sqrt(150 ^ 2 + (P.v * S) ^ 2) + 10)
+	local headCar = playerCar
+end)
+
+toMenu()

@@ -1,0 +1,4 @@
+-- Interstate Weave (Roblox port): the whole game runs on each player's own client.
+-- The server only turns off the default avatar so it doesn't spawn on the highway.
+local Players = game:GetService("Players")
+Players.CharacterAutoLoads = false
