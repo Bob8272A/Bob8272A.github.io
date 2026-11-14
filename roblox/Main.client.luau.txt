@@ -14,6 +14,8 @@ local S = 3.571 -- studs per metre
 local MPH = 0.44704
 local LANE_W = 3.7
 local ROAD_HALF = 2 * LANE_W + 0.9 -- metres from centre to the edge line
+local SHOULDER = 3.4 -- drivable shoulder outside each edge line
+local RAIL_X = ROAD_HALF - 0.4 + SHOULDER + 0.5 -- guardrail
 local SEG_LEN, SEG_COUNT = 80, 20
 local REWIND_S = 7
 
@@ -63,21 +65,37 @@ local function cp(car, sx, sy, sz, ox, oy, oz, color, mat, o)
 	local rot = CFrame.new()
 	if o and o.rx then rot = CFrame.Angles(math.rad(o.rx), 0, 0) end
 	local p = mk(car.model, Vector3.new(sx, sy, sz), car.root.CFrame * CFrame.new(ox * S, oy * S, oz * S) * rot, color, mat, o)
+	if color == car.paint and mat == nil then p.Reflectance = 0.12 end
 	p.Anchored = false; p.Massless = true
 	local wc = Instance.new("WeldConstraint"); wc.Part0 = car.root; wc.Part1 = p; wc.Parent = p
 	return p
 end
 
 local GLASS = Color3.fromRGB(18, 28, 40)
+-- sloped glass/panel welded to a car (tall end toward +Z by default; flip = tall end toward -Z)
+local function cw(car, sx, sy, sz, ox, oy, oz, color, mat, flip, o)
+	local w = Instance.new("WedgePart"); w.Anchored = false; w.CanCollide = false; w.CanTouch = false; w.CanQuery = false; w.Massless = true
+	w.Size = Vector3.new(sx, sy, sz) * S; w.Color = color; w.Material = mat or Enum.Material.SmoothPlastic
+	if o and o.refl then w.Reflectance = o.refl elseif color == car.paint and mat == nil then w.Reflectance = 0.12 end
+	w.CFrame = car.root.CFrame * CFrame.new(ox * S, oy * S, oz * S) * (flip and CFrame.Angles(0, math.pi, 0) or CFrame.new())
+	w.Parent = car.model
+	local wc = Instance.new("WeldConstraint"); wc.Part0 = car.root; wc.Part1 = w; wc.Parent = w
+	return w
+end
+local CHROME = Color3.fromRGB(190, 195, 200)
+local function mirrors(car, x, y, z, c)
+	for _, sx in ipairs({ -1, 1 }) do cp(car, 0.16, 0.1, 0.14, sx * x, y, z, c) end
+end
 local BLACK = Color3.fromRGB(14, 15, 17)
 local AMBER_OFF, AMBER_ON = Color3.fromRGB(70, 42, 8), Color3.fromRGB(255, 160, 30)
 
 local function wheels(car, x, zf, zr, r, w)
 	for _, sx in ipairs({ -x, x }) do
 		for _, z in ipairs({ zf, zr }) do
-			local p = cp(car, w, r * 2, r * 2, sx, r, z, BLACK, Enum.Material.SmoothPlastic, { shape = Enum.PartType.Cylinder })
-			local rim = cp(car, w + 0.02, r * 1.1, r * 1.1, sx + (sx > 0 and 0.01 or -0.01), r, z, Color3.fromRGB(150, 155, 160), Enum.Material.Metal, { shape = Enum.PartType.Cylinder })
+			cp(car, w, r * 2, r * 2, sx, r, z, Color3.fromRGB(22, 22, 24), Enum.Material.Rubber, { shape = Enum.PartType.Cylinder })
+			local rim = cp(car, w + 0.02, r * 1.25, r * 1.25, sx + (sx > 0 and 0.01 or -0.01), r, z, Color3.fromRGB(175, 180, 186), Enum.Material.Metal, { shape = Enum.PartType.Cylinder, refl = 0.25 })
 			rim.Name = "Rim"
+			cp(car, w + 0.04, r * 0.4, r * 0.4, sx + (sx > 0 and 0.02 or -0.02), r, z, Color3.fromRGB(60, 62, 66), Enum.Material.Metal, { shape = Enum.PartType.Cylinder })
 		end
 	end
 end
@@ -96,24 +114,38 @@ end
 ---------------------------------------------------------------- car builders (metres; the car faces -Z)
 local BUILD = {}
 function BUILD.sedan(car, c)
-	cp(car, 1.85, 0.62, 4.6, 0, 0.58, 0, c)
-	cp(car, 1.62, 0.5, 2.3, 0, 1.1, 0.35, GLASS, Enum.Material.Glass, { refl = 0.15 })
-	cp(car, 1.64, 0.07, 1.9, 0, 1.37, 0.35, c)
-	cp(car, 1.8, 0.22, 0.15, 0, 0.36, -2.3, BLACK); cp(car, 1.8, 0.22, 0.15, 0, 0.36, 2.3, BLACK)
+	cp(car, 1.85, 0.55, 4.6, 0, 0.55, 0, c)
+	cp(car, 1.8, 0.08, 1.2, 0, 0.86, -1.6, c) -- bonnet
+	cp(car, 1.8, 0.08, 0.9, 0, 0.86, 1.85, c) -- boot lid
+	cw(car, 1.6, 0.44, 0.75, 0, 1.12, -0.6, GLASS, Enum.Material.Glass, false, { refl = 0.2 })
+	cp(car, 1.62, 0.44, 1.3, 0, 1.12, 0.4, GLASS, Enum.Material.Glass, { refl = 0.2 })
+	cw(car, 1.6, 0.44, 0.65, 0, 1.12, 1.38, GLASS, Enum.Material.Glass, true, { refl = 0.2 })
+	cp(car, 1.62, 0.06, 1.35, 0, 1.36, 0.4, c)
+	cp(car, 1.87, 0.04, 2.6, 0, 0.88, 0.3, CHROME, Enum.Material.Metal) -- belt-line trim
+	cp(car, 1.8, 0.24, 0.16, 0, 0.36, -2.3, BLACK); cp(car, 1.8, 0.24, 0.16, 0, 0.36, 2.3, BLACK)
+	cp(car, 0.9, 0.14, 0.04, 0, 0.55, -2.33, Color3.fromRGB(30, 32, 36)) -- grille
+	mirrors(car, 0.98, 1.0, -0.35, c)
 	wheels(car, 0.88, -1.4, 1.4, 0.34, 0.26)
 	lights(car, 1.85, -2.31, 2.31, 0.66, 0.72)
 end
 function BUILD.suv(car, c)
 	cp(car, 1.95, 0.8, 4.7, 0, 0.78, 0, c)
-	cp(car, 1.75, 0.65, 3.3, 0, 1.5, 0.4, GLASS, Enum.Material.Glass, { refl = 0.15 })
-	cp(car, 1.78, 0.08, 3.0, 0, 1.86, 0.4, c)
+	cp(car, 1.9, 0.08, 1.0, 0, 1.2, -1.85, c)
+	cw(car, 1.72, 0.6, 0.7, 0, 1.5, -1.0, GLASS, Enum.Material.Glass, false, { refl = 0.2 })
+	cp(car, 1.75, 0.6, 2.7, 0, 1.5, 0.7, GLASS, Enum.Material.Glass, { refl = 0.2 })
+	cp(car, 1.78, 0.08, 3.25, 0, 1.84, 0.45, c)
+	cp(car, 1.6, 0.06, 2.2, 0, 1.91, 0.5, Color3.fromRGB(40, 42, 46)) -- roof rails
+	cp(car, 1.99, 0.3, 4.75, 0, 0.42, 0, Color3.fromRGB(38, 40, 44)) -- cladding
 	cp(car, 1.9, 0.25, 0.15, 0, 0.45, -2.35, BLACK); cp(car, 1.9, 0.25, 0.15, 0, 0.45, 2.35, BLACK)
+	mirrors(car, 1.04, 1.3, -0.8, c)
 	wheels(car, 0.92, -1.45, 1.45, 0.4, 0.3)
 	lights(car, 1.95, -2.36, 2.36, 0.85, 0.9)
 end
 function BUILD.van(car, c)
 	cp(car, 2.0, 1.9, 5.2, 0, 1.3, 0, c)
-	cp(car, 1.8, 0.55, 0.12, 0, 1.55, -2.62, GLASS, Enum.Material.Glass, { refl = 0.15 })
+	cp(car, 1.8, 0.55, 0.12, 0, 1.55, -2.62, GLASS, Enum.Material.Glass, { refl = 0.2 })
+	cp(car, 2.04, 0.45, 2.4, 0, 1.6, -0.9, GLASS, Enum.Material.Glass, { refl = 0.2 }) -- side windows
+	mirrors(car, 1.06, 1.5, -2.3, c)
 	cp(car, 2.02, 0.12, 5.0, 0, 0.55, 0, BLACK)
 	wheels(car, 0.95, -1.6, 1.6, 0.38, 0.28)
 	lights(car, 2.0, -2.61, 2.61, 0.75, 0.85)
@@ -127,22 +159,31 @@ function BUILD.semi(car, c)
 	lights(car, 2.5, -7.12, 7.9, 1.1, 1.1)
 end
 function BUILD.vanta(car, c) -- balanced coupe
-	cp(car, 1.88, 0.5, 4.5, 0, 0.5, 0, c)
-	cp(car, 1.8, 0.1, 1.5, 0, 0.78, -1.45, c, nil, { rx = -6 })
-	cp(car, 1.6, 0.42, 1.9, 0, 0.98, 0.35, GLASS, Enum.Material.Glass, { refl = 0.2 })
-	cp(car, 1.62, 0.06, 1.3, 0, 1.2, 0.45, c)
-	cp(car, 1.7, 0.05, 0.4, 0, 1.0, 2.2, BLACK) -- lip spoiler
-	cp(car, 1.84, 0.2, 0.15, 0, 0.32, -2.27, BLACK); cp(car, 1.84, 0.2, 0.15, 0, 0.32, 2.27, BLACK)
+	cp(car, 1.88, 0.48, 4.5, 0, 0.5, 0, c)
+	cw(car, 1.84, 0.16, 1.5, 0, 0.82, -1.45, c, nil, false) -- sloped bonnet
+	cw(car, 1.58, 0.42, 0.85, 0, 0.95, -0.35, GLASS, Enum.Material.Glass, false, { refl = 0.25 })
+	cp(car, 1.6, 0.42, 0.9, 0, 0.95, 0.5, GLASS, Enum.Material.Glass, { refl = 0.25 })
+	cw(car, 1.6, 0.42, 1.0, 0, 0.95, 1.45, c, nil, true) -- fastback
+	cp(car, 1.62, 0.06, 0.95, 0, 1.18, 0.5, c)
+	cp(car, 1.7, 0.05, 0.4, 0, 1.0, 2.15, BLACK) -- lip spoiler
+	cp(car, 1.84, 0.2, 0.15, 0, 0.3, -2.27, BLACK); cp(car, 1.84, 0.2, 0.15, 0, 0.3, 2.27, BLACK)
+	for _, sx in ipairs({ -1, 1 }) do cp(car, 0.22, 0.1, 0.06, sx * 0.45, 0.3, 2.28, CHROME, Enum.Material.Metal, { shape = Enum.PartType.Cylinder }) end -- exhausts
+	mirrors(car, 0.98, 0.92, -0.15, c)
 	wheels(car, 0.9, -1.4, 1.38, 0.35, 0.28)
 	lights(car, 1.88, -2.26, 2.26, 0.58, 0.64, true)
 end
 function BUILD.strada(car, c) -- muscle car with twin stripes
 	cp(car, 1.95, 0.6, 4.8, 0, 0.62, 0, c)
-	cp(car, 1.7, 0.45, 2.0, 0, 1.12, 0.55, GLASS, Enum.Material.Glass, { refl = 0.15 })
-	cp(car, 1.72, 0.07, 1.5, 0, 1.36, 0.6, c)
+	cw(car, 1.68, 0.45, 0.8, 0, 1.15, -0.3, GLASS, Enum.Material.Glass, false, { refl = 0.25 })
+	cp(car, 1.7, 0.45, 1.0, 0, 1.15, 0.6, GLASS, Enum.Material.Glass, { refl = 0.25 })
+	cw(car, 1.7, 0.45, 0.6, 0, 1.15, 1.4, GLASS, Enum.Material.Glass, true, { refl = 0.25 })
+	cp(car, 1.72, 0.07, 1.25, 0, 1.39, 0.55, c)
 	cp(car, 0.4, 0.05, 4.8, -0.3, 0.945, 0, Color3.fromRGB(240, 240, 235)); cp(car, 0.4, 0.05, 4.8, 0.3, 0.945, 0, Color3.fromRGB(240, 240, 235))
 	cp(car, 0.7, 0.14, 0.9, 0, 1.0, -1.3, BLACK) -- hood scoop
+	cp(car, 1.8, 0.06, 0.3, 0, 1.0, 2.25, BLACK) -- ducktail
 	cp(car, 1.9, 0.24, 0.16, 0, 0.38, -2.4, BLACK); cp(car, 1.9, 0.24, 0.16, 0, 0.38, 2.4, BLACK)
+	for _, sx in ipairs({ -1, 1 }) do cp(car, 0.24, 0.11, 0.08, sx * 0.6, 0.32, 2.42, CHROME, Enum.Material.Metal, { shape = Enum.PartType.Cylinder }) end
+	mirrors(car, 1.02, 1.0, -0.05, c)
 	wheels(car, 0.95, -1.5, 1.5, 0.37, 0.32)
 	lights(car, 1.95, -2.41, 2.41, 0.7, 0.76, true)
 end
@@ -172,12 +213,19 @@ local DIM = { sedan = { L = 4.6, W = 1.85 }, suv = { L = 4.7, W = 1.95 }, van = 
 	vanta = { L = 4.5, W = 1.88 }, strada = { L = 4.8, W = 1.95 }, or1 = { L = 4.66, W = 2.04 } }
 
 local function buildCar(kind, color)
-	local car = { kind = kind, L = DIM[kind].L, W = DIM[kind].W }
+	local car = { kind = kind, L = DIM[kind].L, W = DIM[kind].W, paint = color }
 	car.model = Instance.new("Model"); car.model.Name = "Car_" .. kind
 	car.root = mk(car.model, Vector3.new(0.4, 0.3, 0.4), CFrame.new(0, 300, 0), color, Enum.Material.SmoothPlastic, { tr = 1 })
 	car.model.PrimaryPart = car.root
 	BUILD[kind](car, color)
 	car.model.Parent = world
+	if kind == "vanta" or kind == "strada" or kind == "or1" then
+		-- real headlight beams for the player's car
+		local beam = Instance.new("SpotLight"); beam.Face = Enum.NormalId.Front; beam.Angle = 55; beam.Range = 60; beam.Brightness = 3
+		beam.Color = Color3.fromRGB(255, 244, 220); beam.Shadows = true; beam.Parent = car.root
+		local tail = Instance.new("PointLight"); tail.Range = 8; tail.Brightness = 1.2; tail.Color = Color3.fromRGB(255, 40, 30)
+		local tp = car.model:FindFirstChild("Tail"); if tp then tail.Parent = tp end
+	end
 	return car
 end
 
@@ -188,12 +236,36 @@ local CARS = {
 }
 
 ---------------------------------------------------------------- lighting
+for _, e in ipairs(Lighting:GetChildren()) do if e:IsA("PostEffect") or e:IsA("Atmosphere") or e:IsA("Sky") then e:Destroy() end end
 local atmosphere = Instance.new("Atmosphere"); atmosphere.Parent = Lighting
+local sky = Instance.new("Sky"); sky.SunAngularSize = 14; sky.MoonAngularSize = 9; sky.StarCount = 1500; sky.Parent = Lighting
 local cc = Instance.new("ColorCorrectionEffect"); cc.Parent = Lighting
-local bloom = Instance.new("BloomEffect"); bloom.Intensity = 0.35; bloom.Size = 24; bloom.Threshold = 1.6; bloom.Parent = Lighting
-local sun = Instance.new("SunRaysEffect"); sun.Intensity = 0.08; sun.Parent = Lighting
+local bloom = Instance.new("BloomEffect"); bloom.Intensity = 0.55; bloom.Size = 30; bloom.Threshold = 1.15; bloom.Parent = Lighting
+local sun = Instance.new("SunRaysEffect"); sun.Intensity = 0.1; sun.Spread = 0.6; sun.Parent = Lighting
+local dof = Instance.new("DepthOfFieldEffect"); dof.FarIntensity = 0.22; dof.FocusDistance = 90; dof.InFocusRadius = 160; dof.NearIntensity = 0; dof.Parent = Lighting
+local clouds = Workspace.Terrain:FindFirstChildOfClass("Clouds") or Instance.new("Clouds")
+clouds.Parent = Workspace.Terrain
 local rainOn = false
 local function applyWeather()
+	Lighting.ClockTime = rainOn and 15.6 or 17.25
+	Lighting.GeographicLatitude = 34
+	Lighting.Brightness = rainOn and 1.6 or 3.2
+	Lighting.EnvironmentDiffuseScale = 1; Lighting.EnvironmentSpecularScale = 1
+	Lighting.ShadowSoftness = 0.15
+	Lighting.Ambient = rainOn and Color3.fromRGB(62, 66, 76) or Color3.fromRGB(70, 60, 66)
+	Lighting.OutdoorAmbient = rainOn and Color3.fromRGB(96, 102, 114) or Color3.fromRGB(128, 110, 108)
+	Lighting.ExposureCompensation = rainOn and -0.15 or 0.1
+	atmosphere.Density = rainOn and 0.5 or 0.3; atmosphere.Offset = rainOn and 0.1 or 0.22
+	atmosphere.Color = rainOn and Color3.fromRGB(160, 166, 178) or Color3.fromRGB(236, 186, 150)
+	atmosphere.Decay = rainOn and Color3.fromRGB(96, 100, 112) or Color3.fromRGB(122, 86, 92)
+	atmosphere.Glare = rainOn and 0 or 0.45; atmosphere.Haze = rainOn and 2.8 or 1.3
+	clouds.Cover = rainOn and 0.92 or 0.55; clouds.Density = rainOn and 0.85 or 0.45
+	clouds.Color = rainOn and Color3.fromRGB(130, 134, 142) or Color3.fromRGB(255, 236, 222)
+	sun.Intensity = rainOn and 0 or 0.1
+	cc.Saturation = rainOn and -0.2 or 0.12; cc.Contrast = 0.12; cc.Brightness = rainOn and -0.02 or 0.01
+	cc.TintColor = rainOn and Color3.fromRGB(214, 224, 240) or Color3.fromRGB(255, 242, 230)
+end
+applyWeather()
 	Lighting.ClockTime = rainOn and 15.5 or 17.1
 	Lighting.Brightness = rainOn and 1.8 or 3
 	Lighting.EnvironmentDiffuseScale = 1; Lighting.EnvironmentSpecularScale = 1
@@ -213,47 +285,119 @@ applyWeather()
 local segs = {}
 local roadParts = {}
 local rng = Random.new(7)
+local GREENS = { Color3.fromRGB(46, 84, 44), Color3.fromRGB(58, 96, 48), Color3.fromRGB(38, 70, 40), Color3.fromRGB(72, 102, 52) }
+local function tree(m, x, z, h)
+	if rng:NextNumber() < 0.45 then -- pine: trunk with stacked, shrinking canopy layers
+		mk(m, Vector3.new(0.4, h * 0.5, 0.4), CFrame.new(x * S, h * 0.25 * S, z * S), Color3.fromRGB(66, 46, 32), Enum.Material.Wood)
+		local g = Color3.fromRGB(30, 62, 40)
+		for k = 0, 3 do
+			local r = h * (0.42 - k * 0.09)
+			mk(m, Vector3.new(r, r * 0.8, r), CFrame.new(x * S, (h * 0.35 + k * h * 0.17) * S, z * S), g, Enum.Material.Grass, { shape = Enum.PartType.Ball })
+		end
+	else -- broadleaf: trunk with a cluster of canopy balls
+		mk(m, Vector3.new(0.45, h * 0.6, 0.45), CFrame.new(x * S, h * 0.3 * S, z * S), Color3.fromRGB(78, 58, 40), Enum.Material.Wood)
+		local g = GREENS[rng:NextInteger(1, #GREENS)]
+		for k = 1, 3 do
+			local r = h * rng:NextNumber(0.38, 0.5)
+			local ox, oz = rng:NextNumber(-0.25, 0.25) * h, rng:NextNumber(-0.25, 0.25) * h
+			mk(m, Vector3.new(r, r, r), CFrame.new((x + ox) * S, h * rng:NextNumber(0.68, 0.85) * S, (z + oz) * S), g:Lerp(Color3.new(0, 0, 0), rng:NextNumber(0, 0.15)), Enum.Material.Grass, { shape = Enum.PartType.Ball })
+		end
+	end
+end
 local function buildSegment()
 	local m = Instance.new("Model"); m.Name = "Segment"
 	local L = SEG_LEN
-	local road = mk(m, Vector3.new(ROAD_HALF * 2 + 6, 0.2, L), CFrame.new(0, -0.1 * S, 0), Color3.fromRGB(46, 47, 50), Enum.Material.Asphalt)
+	local road = mk(m, Vector3.new(ROAD_HALF * 2 - 0.8, 0.2, L), CFrame.new(0, -0.1 * S, 0), Color3.fromRGB(48, 49, 52), Enum.Material.Asphalt)
 	road.Name = "Road"; roadParts[#roadParts + 1] = road
 	m.PrimaryPart = road
-	mk(m, Vector3.new(300, 0.3, L), CFrame.new(0, -0.35 * S, 0), Color3.fromRGB(70, 82, 56), Enum.Material.Grass)
+	mk(m, Vector3.new(420, 0.3, L), CFrame.new(0, -0.38 * S, 0), Color3.fromRGB(74, 88, 54), Enum.Material.Grass)
 	for _, sx in ipairs({ -1, 1 }) do
-		mk(m, Vector3.new(0.18, 0.02, L), CFrame.new(sx * (ROAD_HALF - 0.4) * S, 0.005 * S, 0), Color3.fromRGB(235, 235, 225), nil, { shadow = false })
-		mk(m, Vector3.new(0.14, 0.7, L), CFrame.new(sx * (ROAD_HALF + 2.2) * S, 0.35 * S, 0), Color3.fromRGB(120, 124, 128), Enum.Material.Metal)
+		local inner = ROAD_HALF - 0.4
+		-- shoulder: older, lighter asphalt with a rumble strip along the edge line
+		local sh = mk(m, Vector3.new(SHOULDER + 1.2, 0.2, L), CFrame.new(sx * (inner + (SHOULDER + 1.2) / 2) * S, -0.1 * S, 0), Color3.fromRGB(62, 62, 64), Enum.Material.Asphalt)
+		roadParts[#roadParts + 1] = sh
+		mk(m, Vector3.new(0.45, 0.025, L), CFrame.new(sx * (inner + 0.45) * S, 0.006 * S, 0), Color3.fromRGB(80, 80, 82), Enum.Material.DiamondPlate, { shadow = false })
+		mk(m, Vector3.new(0.18, 0.02, L), CFrame.new(sx * inner * S, 0.008 * S, 0), Color3.fromRGB(240, 240, 232), Enum.Material.SmoothPlastic, { shadow = false })
+		-- gravel verge, guardrail beam and posts
+		mk(m, Vector3.new(3, 0.25, L), CFrame.new(sx * (RAIL_X + 1.2) * S, -0.2 * S, 0), Color3.fromRGB(104, 98, 86), Enum.Material.Pebble)
+		mk(m, Vector3.new(0.08, 0.32, L), CFrame.new(sx * RAIL_X * S, 0.62 * S, 0), Color3.fromRGB(176, 182, 188), Enum.Material.DiamondPlate, { refl = 0.1 })
+		for z = -L / 2 + 2, L / 2, 6 do
+			mk(m, Vector3.new(0.12, 0.75, 0.12), CFrame.new(sx * (RAIL_X + 0.12) * S, 0.37 * S, z * S), Color3.fromRGB(120, 126, 132), Enum.Material.Metal)
+		end
+		-- reflector posts
+		mk(m, Vector3.new(0.1, 0.9, 0.1), CFrame.new(sx * (RAIL_X + 0.9) * S, 0.45 * S, 0), Color3.fromRGB(235, 235, 230), Enum.Material.SmoothPlastic)
+		mk(m, Vector3.new(0.11, 0.12, 0.11), CFrame.new(sx * (RAIL_X + 0.9) * S, 0.8 * S, 0), sx > 0 and Color3.fromRGB(255, 150, 40) or Color3.fromRGB(240, 240, 240), Enum.Material.Neon, { shadow = false })
 	end
+	-- lane dashes: 3 m paint every 12 m
 	for i = 1, 3 do
-		for d = 0, 3 do
-			mk(m, Vector3.new(0.14, 0.02, 3.2), CFrame.new((i - 2) * LANE_W * S, 0.005 * S, (-L / 2 + 5 + d * (L / 4)) * S), Color3.fromRGB(235, 235, 225), nil, { shadow = false })
+		for d = 0, L / 12 - 1 do
+			mk(m, Vector3.new(0.14, 0.02, 3), CFrame.new((i - 2) * LANE_W * S, 0.006 * S, (-L / 2 + 4 + d * 12) * S), Color3.fromRGB(238, 238, 228), Enum.Material.SmoothPlastic, { shadow = false })
 		end
 	end
-	local lx = (rng:NextInteger(0, 1) == 0 and -1 or 1) * (ROAD_HALF + 3.4)
-	mk(m, Vector3.new(0.3, 9, 0.3), CFrame.new(lx * S, 4.5 * S, 10 * S), Color3.fromRGB(70, 72, 76), Enum.Material.Metal)
-	mk(m, Vector3.new(0.3, 0.3, 2.6), CFrame.new((lx - math.sign(lx) * 1.1) * S, 9.1 * S, 10 * S), Color3.fromRGB(70, 72, 76), Enum.Material.Metal)
-	local head = mk(m, Vector3.new(0.5, 0.2, 0.9), CFrame.new((lx - math.sign(lx) * 2.1) * S, 9 * S, 10 * S), Color3.fromRGB(255, 214, 150), Enum.Material.Neon)
-	local pl = Instance.new("PointLight"); pl.Range = 38; pl.Brightness = 1.6; pl.Color = Color3.fromRGB(255, 200, 140); pl.Parent = head
+	-- street lights on both sides, staggered
+	for _, side in ipairs({ -1, 1 }) do
+		local lx, lz = side * (RAIL_X + 1.6), side * 20
+		mk(m, Vector3.new(0.25, 10, 0.25), CFrame.new(lx * S, 5 * S, lz * S), Color3.fromRGB(84, 88, 94), Enum.Material.Metal)
+		mk(m, Vector3.new(3.4, 0.18, 0.18), CFrame.new((lx - side * 1.6) * S, 10 * S, lz * S), Color3.fromRGB(84, 88, 94), Enum.Material.Metal)
+		local head = mk(m, Vector3.new(0.9, 0.18, 0.45), CFrame.new((lx - side * 3.2) * S, 9.9 * S, lz * S), Color3.fromRGB(255, 220, 160), Enum.Material.Neon, { shadow = false })
+		local sl = Instance.new("SpotLight"); sl.Face = Enum.NormalId.Bottom; sl.Angle = 120; sl.Range = 48; sl.Brightness = 2.2; sl.Color = Color3.fromRGB(255, 205, 150); sl.Parent = head
+	end
+	-- trees, bushes and rocks
+	for _ = 1, 9 do
+		local side = rng:NextInteger(0, 1) == 0 and -1 or 1
+		tree(m, side * rng:NextNumber(RAIL_X + 6, RAIL_X + 70), rng:NextNumber(-L / 2, L / 2), rng:NextNumber(6, 12))
+	end
 	for _ = 1, 5 do
 		local side = rng:NextInteger(0, 1) == 0 and -1 or 1
-		local tx, tz, h = side * rng:NextNumber(ROAD_HALF + 6, ROAD_HALF + 45), rng:NextNumber(-L / 2, L / 2), rng:NextNumber(5, 9)
-		mk(m, Vector3.new(0.5, h * 0.7, 0.5), CFrame.new(tx * S, h * 0.35 * S, tz * S), Color3.fromRGB(70, 50, 36), Enum.Material.Wood)
-		mk(m, Vector3.new(h * 0.6, h * 0.6, h * 0.6), CFrame.new(tx * S, h * 0.8 * S, tz * S), Color3.fromRGB(34, 72, 44), Enum.Material.Grass, { shape = Enum.PartType.Ball })
+		local r = rng:NextNumber(1, 2.2)
+		mk(m, Vector3.new(r, r * 0.7, r), CFrame.new(side * rng:NextNumber(RAIL_X + 3, RAIL_X + 9) * S, r * 0.2 * S, rng:NextNumber(-L / 2, L / 2) * S), GREENS[rng:NextInteger(1, #GREENS)], Enum.Material.Grass, { shape = Enum.PartType.Ball })
+	end
+	if rng:NextNumber() < 0.5 then
+		local side = rng:NextInteger(0, 1) == 0 and -1 or 1
+		local r = rng:NextNumber(1.5, 3.5)
+		mk(m, Vector3.new(r * 1.4, r, r), CFrame.new(side * rng:NextNumber(RAIL_X + 8, RAIL_X + 40) * S, r * 0.3 * S, rng:NextNumber(-L / 2, L / 2) * S) * CFrame.Angles(0, rng:NextNumber(0, 6), 0.2), Color3.fromRGB(120, 112, 104), Enum.Material.Rock)
 	end
 	m.Parent = world
 	return m
+end
+
+-- distant hills: huge squashed spheres that ride along with the camera so the horizon never runs out
+local hills = {}
+for i = 1, 16 do
+	local p = Instance.new("Part"); p.Anchored = true; p.CanCollide = false; p.CanQuery = false; p.CanTouch = false; p.CastShadow = false
+	p.Size = Vector3.new(4, 4, 4); p.Material = Enum.Material.Grass
+	p.Color = Color3.fromRGB(70, 92, 62):Lerp(Color3.fromRGB(110, 120, 130), (i % 4) / 6)
+	local mesh = Instance.new("SpecialMesh"); mesh.MeshType = Enum.MeshType.Sphere
+	local w = rng:NextNumber(180, 340)
+	mesh.Scale = Vector3.new(w, rng:NextNumber(45, 110), w * rng:NextNumber(0.6, 1)) * S / 4
+	mesh.Parent = p
+	p.Parent = world
+	local side = i % 2 == 0 and -1 or 1
+	hills[i] = { part = p, x = side * rng:NextNumber(260, 520), z = (i - 8) * 120 + rng:NextNumber(-40, 40) }
+end
+local function updateHills(f)
+	for _, h in ipairs(hills) do
+		local z = h.z - (f * 0.15) % 1920 -- slow parallax drift
+		if z < -960 then z += 1920 end
+		h.part.CFrame = CFrame.new(h.x * S, -6 * S, -(f + z + 700) * S)
+	end
 end
 for i = 1, SEG_COUNT do segs[i] = { model = buildSegment(), k = i - 1 } end
 local function placeSegment(s, k) s.k = k; s.model:PivotTo(CFrame.new(0, 0, -(k + 0.5) * SEG_LEN * S)) end
 for i, s in ipairs(segs) do placeSegment(s, i - 4) end
 local function updateRoad(f)
+	updateHills(f)
 	local cur = math.floor(f / SEG_LEN)
 	for _, s in ipairs(segs) do
 		if s.k < cur - 3 then placeSegment(s, s.k + SEG_COUNT) end
 	end
 end
 local function setWet(on)
-	for _, r in ipairs(roadParts) do r.Reflectance = on and 0.22 or 0; r.Color = on and Color3.fromRGB(34, 36, 40) or Color3.fromRGB(46, 47, 50) end
+	for i, r in ipairs(roadParts) do
+		r.Reflectance = on and 0.22 or 0
+		local base = r.Name == "Road" and Color3.fromRGB(48, 49, 52) or Color3.fromRGB(62, 62, 64)
+		r.Color = on and base:Lerp(Color3.new(0, 0, 0), 0.3) or base
+	end
 end
 
 -- rain: an emitter that follows the camera and leans back with speed
@@ -306,12 +450,13 @@ local ind = 0 -- -1 left, 1 right
 local indT = 0
 local cockpit = {}
 local mode = "endless" -- endless | stunt
+local autoCenter = false -- menu toggle: car straightens itself when you let go
 local bestBy = { endless = 0, stunt = 0 }
 local cockpitOn = false
 
 local function newP()
 	return { x = laneX(2), v = 0, f = 0, steer = 0, vx = 0, yaw = 0, damage = 0, score = 0, combo = 1, comboT = 0, near = 0, crashed = false, t = 0,
-		y = 0, vy = 0, air = false, airF = 0, cleared = 0, nitro = 0.5, boosting = false, jumps = 0, longest = 0, hitCd = 0 }
+		heading = 0, y = 0, vy = 0, air = false, airF = 0, cleared = 0, nitro = 0.5, boosting = false, jumps = 0, longest = 0, hitCd = 0 }
 end
 P = newP()
 
@@ -423,7 +568,11 @@ end
 local function setCar(d) sel = (sel - 1 + d) % #CARS + 1; showCar(); refreshMenu() end
 button(panel, { Size = UDim2.fromOffset(46, 36), Position = UDim2.fromOffset(18, 98), TextSize = 22, Text = "◀" }, function() setCar(-1) end)
 button(panel, { Size = UDim2.fromOffset(46, 36), Position = UDim2.new(1, -64, 0, 98), TextSize = 22, Text = "▶" }, function() setCar(1) end)
-rainBtn = button(panel, { Size = UDim2.new(1, -36, 0, 40), Position = UDim2.fromOffset(18, 190), TextSize = 18, BackgroundColor3 = Color3.fromRGB(70, 80, 96), TextColor3 = Color3.new(1, 1, 1), Text = "" },
+local steerBtn
+steerBtn = button(panel, { Size = UDim2.new(0.5, -22, 0, 40), Position = UDim2.new(0.5, 4, 0, 190), TextSize = 15, BackgroundColor3 = Color3.fromRGB(70, 80, 96), TextColor3 = Color3.new(1, 1, 1), Text = "" },
+	function() autoCenter = not autoCenter; steerBtn.Text = autoCenter and "Auto-straighten: ON" or "Auto-straighten: OFF" end)
+steerBtn.Text = "Auto-straighten: OFF"
+rainBtn = button(panel, { Size = UDim2.new(0.5, -22, 0, 40), Position = UDim2.fromOffset(18, 190), TextSize = 18, BackgroundColor3 = Color3.fromRGB(70, 80, 96), TextColor3 = Color3.new(1, 1, 1), Text = "" },
 	function() rainOn = not rainOn; applyWeather(); setWet(rainOn); refreshMenu() end)
 local driveBtn
 local startGame
@@ -661,14 +810,18 @@ local function stepPlayer(dt)
 	if P.boosting then a += 15 * math.max(0, 1 - P.v / top) end
 	if P.air then a = -drag * 0.4 end -- no drive or brakes in the air
 	P.v = math.max(0, P.v + a * dt)
-	local lat = 10.5 / (1 + P.v / 38) * wet * (P.air and 0.25 or 1)
-	P.vx = P.vx + (P.steer * lat - P.vx) * math.min(1, dt * 8)
+	-- steering turns the car; with auto-straighten off the car keeps the heading you leave it at
+	local rate = 1.35 / (1 + P.v / 42) * wet * (P.air and 0.15 or 1)
+	P.heading = P.heading + P.steer * rate * dt
+	if (autoCenter and str == 0) or P.crashed then P.heading = P.heading - P.heading * math.min(1, dt * 3.5) end
+	P.heading = clamp(P.heading, -0.45, 0.45)
+	P.vx = math.sin(P.heading) * P.v
 	P.x = P.x + P.vx * dt
-	P.yaw = -math.atan(P.vx / math.max(P.v, 6))
+	P.yaw = -P.heading
 	P.f = P.f + P.v * dt
-	local edge = ROAD_HALF - 0.4 - 1.0
+	local edge = RAIL_X - 0.15 - (playerCar and playerCar.W / 2 or 1)
 	if math.abs(P.x) > edge then
-		P.x = clamp(P.x, -edge, edge); P.vx = 0
+		P.x = clamp(P.x, -edge, edge); P.vx = 0; P.heading = -P.heading * 0.25 -- glance off the guardrail
 		P.damage = P.damage + dt * 0.18; P.v = P.v * (1 - dt * 0.6)
 		if P.damage >= 1 and not P.crashed then wreck("WRECKED") end
 	end
@@ -755,7 +908,7 @@ local function collisions(dt)
 			if overlap < 0.55 then
 				-- side swipe
 				local push = (dx >= 0 and -1 or 1)
-				P.x = P.x + push * overlap * 0.5; P.vx = push * 1.5
+				P.x = P.x + push * overlap * 0.5; P.heading = push * 0.06
 				P.v = P.v * (1 - dt * 0.5)
 				P.damage = P.damage + dt * 0.55; P.combo = 1; shake = math.max(shake, 0.4)
 				if P.damage >= 1 then wreck("WRECKED") end
@@ -922,7 +1075,7 @@ if RunService:IsStudio() then
 		if cmd == "ramp" and state == "play" and ramps[1] then
 			local r = ramps[1]
 			for _, c in ipairs(traffic) do if c.lane == r.lane and math.abs(c.f - r.f) < 80 then c.f = r.f + 120 end end
-			P.f = r.f - RAMP.L / 2 - 45; P.x = r.x; P.vx = 0; P.v = 42; P.air = false; P.y = 0; P.crashed = false
+			P.f = r.f - RAMP.L / 2 - 45; P.x = r.x; P.vx = 0; P.heading = 0; P.v = 42; P.air = false; P.y = 0; P.crashed = false
 			hist = {}
 		end
 	end)
