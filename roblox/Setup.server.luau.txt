@@ -6,18 +6,20 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 Players.CharacterAutoLoads = false
 
-local MODES = { endless = true, stunt = true }
+local MODES = { endless = true, stunt = true, pursuit = true, rush = true }
 local MAX_SCORE = 5000000 -- anything above this is not a real run
 -- settings the client may save, with their allowed values
 local SETTINGS = {
 	steer = function(v) return type(v) == "number" and v >= 0.5 and v <= 2.5 end,
-	autoCenter = "boolean", rewindFx = "boolean", swipeSafe = "boolean", muted = "boolean",
+	autoCenter = "boolean", rewindFx = "boolean", swipeSafe = "boolean", muted = "boolean", divided = "boolean", tutorialDone = "boolean",
+	music = function(v) return type(v) == "number" and v >= 0 and v <= 1 end,
+	terrain = { flat = true, hills = true, curves = true }, track = { night = true, lofi = true, overdrive = true, off = true },
 	sfx = function(v) return type(v) == "number" and v >= 0 and v <= 1 end,
 	traffic = function(v) return type(v) == "number" and v >= 0 and v <= 2 end,
 	paint = function(v) return type(v) == "number" and v >= 1 and v <= 5 and v % 1 == 0 end,
 	motionBlur = { off = true, light = true, strong = true }, diff = { easy = true, normal = true, hard = true },
 	weather = { clear = true, rain = true }, tod = { day = true, dusk = true, night = true },
-	car = { vanta = true, or1 = true, strada = true }, mode = { endless = true, stunt = true },
+	car = { vanta = true, or1 = true, strada = true, kestrel = true, phantom = true, apex = true }, mode = { endless = true, stunt = true, pursuit = true, rush = true },
 }
 local function validSetting(k, v)
 	local rule = SETTINGS[k]
@@ -37,7 +39,7 @@ pcall(function() store = DataStoreService:GetDataStore("InterstateWeave_v2") end
 
 local cache, lastSubmit, lastSave, dirty = {}, {}, {}, {}
 
-local function blank() return { settings = {}, career = 0, best = { endless = 0, stunt = 0 } } end
+local function blank() return { settings = {}, career = 0, best = { endless = 0, stunt = 0, pursuit = 0, rush = 0 } } end
 local function loadPlayer(plr)
 	local data = blank()
 	if store then
