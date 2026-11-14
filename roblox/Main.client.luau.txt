@@ -194,7 +194,6 @@ local bloom = Instance.new("BloomEffect"); bloom.Intensity = 0.35; bloom.Size = 
 local sun = Instance.new("SunRaysEffect"); sun.Intensity = 0.08; sun.Parent = Lighting
 local rainOn = false
 local function applyWeather()
-	Lighting.GeometryTechnology = Lighting.GeometryTechnology
 	Lighting.ClockTime = rainOn and 17.2 or 18.4
 	Lighting.Brightness = rainOn and 1.4 or 2.4
 	Lighting.EnvironmentDiffuseScale = 1; Lighting.EnvironmentSpecularScale = 1
