@@ -266,20 +266,6 @@ local function applyWeather()
 	cc.TintColor = rainOn and Color3.fromRGB(214, 224, 240) or Color3.fromRGB(255, 242, 230)
 end
 applyWeather()
-	Lighting.ClockTime = rainOn and 15.5 or 17.1
-	Lighting.Brightness = rainOn and 1.8 or 3
-	Lighting.EnvironmentDiffuseScale = 1; Lighting.EnvironmentSpecularScale = 1
-	Lighting.Ambient = rainOn and Color3.fromRGB(70, 74, 84) or Color3.fromRGB(86, 74, 78)
-	Lighting.OutdoorAmbient = rainOn and Color3.fromRGB(80, 86, 98) or Color3.fromRGB(120, 100, 98)
-	Lighting.ColorShift_Top = Color3.new(0, 0, 0)
-	Lighting.ExposureCompensation = rainOn and -0.2 or 0
-	atmosphere.Density = rainOn and 0.5 or 0.3; atmosphere.Offset = rainOn and 0.1 or 0.25
-	atmosphere.Color = rainOn and Color3.fromRGB(150, 156, 168) or Color3.fromRGB(230, 170, 140)
-	atmosphere.Decay = rainOn and Color3.fromRGB(100, 104, 116) or Color3.fromRGB(150, 100, 90)
-	atmosphere.Glare = rainOn and 0 or 0.3; atmosphere.Haze = rainOn and 3 or 1.6
-	cc.Saturation = rainOn and -0.25 or 0.05; cc.Contrast = 0.1; cc.TintColor = rainOn and Color3.fromRGB(215, 225, 240) or Color3.fromRGB(255, 244, 232)
-end
-applyWeather()
 
 ---------------------------------------------------------------- road, scenery
 local segs = {}
