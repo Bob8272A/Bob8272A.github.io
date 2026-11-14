@@ -2529,6 +2529,14 @@ end)
 if RunService:IsStudio() then
 	Workspace:GetAttributeChangedSignal("IW_Test"):Connect(function()
 		local cmd = Workspace:GetAttribute("IW_Test")
+		if type(cmd) == "string" and cmd:sub(1, 4) == "car:" then -- preview any car in the menu, locked or not
+			SET.car = cmd:sub(5); CUR = carDef(SET.car); showCar(); return
+		end
+		if type(cmd) == "string" and cmd:sub(1, 4) == "set:" then -- e.g. set:divided=false
+			local k, v = cmd:match("^set:(%w+)=(.+)$")
+			if k then if v == "true" then v = true elseif v == "false" then v = false end; SET[k] = v; applyTod(); refreshMenu() end
+			return
+		end
 		if cmd == "ramp" and state == "play" and ramps[1] then
 			local r = ramps[1]
 			P.f = r.f - RAMP.L / 2 - 45; P.x = r.x; P.h = 0; P.yaw = 0; P.si = 0; P.v = 42; P.air = false; P.y = 0; P.crashed = false
