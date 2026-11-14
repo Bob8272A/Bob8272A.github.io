@@ -915,4 +915,21 @@ RunService.RenderStepped:Connect(function(dtRaw)
 	local headCar = playerCar
 end)
 
+---------------------------------------------------------------- Studio-only test hook (inactive in live games)
+if RunService:IsStudio() then
+	Workspace:GetAttributeChangedSignal("IW_Test"):Connect(function()
+		local cmd = Workspace:GetAttribute("IW_Test")
+		if cmd == "ramp" and state == "play" and ramps[1] then
+			local r = ramps[1]
+			for _, c in ipairs(traffic) do if c.lane == r.lane and math.abs(c.f - r.f) < 80 then c.f = r.f + 120 end end
+			P.f = r.f - RAMP.L / 2 - 45; P.x = r.x; P.vx = 0; P.v = 42; P.air = false; P.y = 0; P.crashed = false
+			hist = {}
+		end
+	end)
+	RunService.Heartbeat:Connect(function()
+		Workspace:SetAttribute("IW_Status", ("state=%s mode=%s f=%.0f x=%.1f y=%.2f v=%.1f air=%s jumps=%d longest=%.0f score=%d nitro=%.2f dmg=%.2f cars=%d ramps=%d"):format(
+			state, mode, P.f, P.x, P.y or 0, P.v, tostring(P.air), P.jumps or 0, P.longest or 0, math.floor(P.score), P.nitro or 0, P.damage, #traffic, #ramps))
+	end)
+end
+
 toMenu()
