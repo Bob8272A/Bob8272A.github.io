@@ -445,7 +445,7 @@ function startGame()
 	P = newP(); local c = CARS[sel]; P.top = c.top * MPH; P.acc = c.acc
 	P.v = 12
 	if not playerCar or playerCar.kind ~= c.id then showCar() end
-	for _ = 1, 40 do spawnTraffic(rnd(30, 650)) end
+	for _ = 1, 60 do spawnTraffic(rnd(45, 430)) end
 	hist = {}; histT = 0; rewinding = nil; ind = 0; camPos = nil
 	state = "play"; menu.Visible = false; over.Visible = false; hud.Visible = true
 	say("GO!", Color3.fromRGB(140, 255, 160))
@@ -550,14 +550,14 @@ local function stepTraffic(dt)
 			if c.change.t >= 1 then c.lane = c.change.to; c.x = laneX(c.lane); c.change = nil; c.yawv = 0 end
 		end
 		-- cull / respawn
-		if c.f < P.f - 160 or c.f > P.f + 900 then
+		if c.f < P.f - 160 or c.f > P.f + 520 then
 			c.model:Destroy(); table.remove(traffic, i)
 		end
 	end
 	-- keep the road busy
-	local want = 40
+	local want = 30
 	local tries = 0
-	while #traffic < want and tries < 6 do spawnTraffic(P.f + rnd(500, 850)); tries += 1 end
+	while #traffic < want and tries < 6 do spawnTraffic(P.f + rnd(260, 440)); tries += 1 end
 end
 
 local function yieldToIndicator(dt)
