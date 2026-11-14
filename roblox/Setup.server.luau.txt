@@ -1,4 +1,66 @@
--- Interstate Weave (Roblox port): the whole game runs on each player's own client.
--- The server only turns off the default avatar so it doesn't spawn on the highway.
+-- Interstate Weave (Roblox port): the game itself runs on each player's client.
+-- The server hides the default avatar and keeps each player's best score per mode in a DataStore.
 local Players = game:GetService("Players")
+local DataStoreService = game:GetService("DataStoreService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 Players.CharacterAutoLoads = false
+
+local MODES = { endless = true, stunt = true }
+local MAX_SCORE = 5000000 -- anything above this is not a real run
+
+local getBest = Instance.new("RemoteFunction"); getBest.Name = "IWGetBest"; getBest.Parent = ReplicatedStorage
+local submit = Instance.new("RemoteEvent"); submit.Name = "IWSubmit"; submit.Parent = ReplicatedStorage
+
+-- DataStores only work in a published place with Studio API access turned on; otherwise keep scores for this session only.
+local store
+pcall(function() store = DataStoreService:GetDataStore("InterstateWeaveBest_v1") end)
+
+local cache, lastSubmit = {}, {}
+
+local function load(plr)
+	local data = { endless = 0, stunt = 0 }
+	if store then
+		local ok, saved = pcall(function() return store:GetAsync("u" .. plr.UserId) end)
+		if ok and type(saved) == "table" then
+			for m in pairs(MODES) do if type(saved[m]) == "number" then data[m] = saved[m] end end
+		end
+	end
+	cache[plr] = data
+	local ls = Instance.new("Folder"); ls.Name = "leaderstats"; ls.Parent = plr
+	local v = Instance.new("IntValue"); v.Name = "Best"; v.Value = math.max(data.endless, data.stunt); v.Parent = ls
+	return data
+end
+
+Players.PlayerAdded:Connect(load)
+for _, p in ipairs(Players:GetPlayers()) do task.spawn(load, p) end
+Players.PlayerRemoving:Connect(function(p) cache[p] = nil; lastSubmit[p] = nil end)
+
+getBest.OnServerInvoke = function(plr)
+	local t = os.clock()
+	while not cache[plr] and os.clock() - t < 8 do task.wait(0.1) end
+	return cache[plr] or { endless = 0, stunt = 0 }
+end
+
+submit.OnServerEvent:Connect(function(plr, mode, score)
+	-- validate everything that comes from the client
+	if type(mode) ~= "string" or not MODES[mode] then return end
+	if type(score) ~= "number" or score ~= score or score < 0 or score > MAX_SCORE then return end
+	local now = os.clock()
+	if lastSubmit[plr] and now - lastSubmit[plr] < 2 then return end
+	lastSubmit[plr] = now
+	score = math.floor(score)
+	local data = cache[plr]; if not data or score <= data[mode] then return end
+	data[mode] = score
+	local ls = plr:FindFirstChild("leaderstats"); local v = ls and ls:FindFirstChild("Best")
+	if v then v.Value = math.max(data.endless, data.stunt) end
+	if store then
+		pcall(function()
+			store:UpdateAsync("u" .. plr.UserId, function(old)
+				old = type(old) == "table" and old or {}
+				old[mode] = math.max(tonumber(old[mode]) or 0, score)
+				return old
+			end)
+		end)
+	end
+end)
