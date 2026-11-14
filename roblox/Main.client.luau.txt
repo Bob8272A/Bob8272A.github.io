@@ -258,12 +258,12 @@ end
 
 -- rain: an emitter that follows the camera and leans back with speed
 local rainPart = Instance.new("Part"); rainPart.Anchored = true; rainPart.CanCollide = false; rainPart.CanQuery = false
-rainPart.Transparency = 1; rainPart.Size = Vector3.new(160, 1, 160); rainPart.Parent = world
+rainPart.Transparency = 1; rainPart.Size = Vector3.new(90, 1, 110); rainPart.Parent = world
 local rain = Instance.new("ParticleEmitter")
 rain.Rate = 0; rain.Lifetime = NumberRange.new(0.5, 0.7); rain.EmissionDirection = Enum.NormalId.Bottom
-rain.Speed = NumberRange.new(150, 170); rain.Size = NumberSequence.new(0.18); rain.Transparency = NumberSequence.new(0.55)
+rain.Speed = NumberRange.new(150, 170); rain.Size = NumberSequence.new(0.32); rain.Transparency = NumberSequence.new(0.35); rain.Brightness = 2
 rain.Color = ColorSequence.new(Color3.fromRGB(200, 215, 235)); rain.LightEmission = 0.4
-rain.Orientation = Enum.ParticleOrientation.VelocityParallel; rain.Squash = NumberSequence.new(-6)
+rain.Orientation = Enum.ParticleOrientation.VelocityParallel; rain.Squash = NumberSequence.new(3)
 rain.Parent = rainPart
 
 ---------------------------------------------------------------- game state
@@ -694,7 +694,7 @@ RunService.RenderStepped:Connect(function(dtRaw)
 		updateRoad(0)
 		updateCamera(dt)
 		rainPart.CFrame = CFrame.new(camera.CFrame.Position + Vector3.new(0, 40, 0))
-		rain.Rate = rainOn and 900 or 0
+		rain.Rate = rainOn and 2200 or 0
 		return
 	end
 	if state == "paused" then return end
@@ -734,8 +734,8 @@ RunService.RenderStepped:Connect(function(dtRaw)
 	updateIndicators()
 	updateCamera(dt)
 	updateHud(dt)
-	rainPart.CFrame = CFrame.new(camera.CFrame.Position + Vector3.new(0, 38, 0)) * CFrame.Angles(math.atan2(P.v * S, 150), 0, 0)
-	rain.Rate = rainOn and 900 or 0
+	rainPart.CFrame = CFrame.new(camera.CFrame.Position + Vector3.new(0, 30, -35)) * CFrame.Angles(math.atan2(P.v * S, 150), 0, 0)
+	rain.Rate = rainOn and 2200 or 0
 	rain.Speed = NumberRange.new(math.sqrt(150 ^ 2 + (P.v * S) ^ 2) - 10, math.sqrt(150 ^ 2 + (P.v * S) ^ 2) + 10)
 	local headCar = playerCar
 end)
