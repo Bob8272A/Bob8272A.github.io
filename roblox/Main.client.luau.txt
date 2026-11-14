@@ -258,13 +258,13 @@ end
 
 -- rain: an emitter that follows the camera and leans back with speed
 local rainPart = Instance.new("Part"); rainPart.Anchored = true; rainPart.CanCollide = false; rainPart.CanQuery = false
-rainPart.Transparency = 1; rainPart.Size = Vector3.new(90, 1, 110); rainPart.Parent = world
+rainPart.Transparency = 1; rainPart.Size = Vector3.new(80, 1, 70); rainPart.Parent = world
 local rain = Instance.new("ParticleEmitter")
 rain.Rate = 0; rain.Lifetime = NumberRange.new(0.5, 0.7); rain.EmissionDirection = Enum.NormalId.Bottom
 rain.Speed = NumberRange.new(150, 170); rain.Size = NumberSequence.new(0.32); rain.Transparency = NumberSequence.new(0.35); rain.Brightness = 2
 rain.Color = ColorSequence.new(Color3.fromRGB(200, 215, 235)); rain.LightEmission = 0.4
 rain.Orientation = Enum.ParticleOrientation.VelocityParallel; rain.Squash = NumberSequence.new(3)
-rain.Parent = rainPart
+rain.LockedToPart = true; rain.Parent = rainPart
 
 ---------------------------------------------------------------- game state
 local keys = {}
@@ -392,7 +392,7 @@ local function ensureCockpit()
 	local f = Instance.new("Folder"); f.Name = "Cockpit"; f.Parent = world
 	local trim = Color3.fromRGB(20, 21, 24)
 	local o = { shadow = false }
-	cockpit.dash = mk(f, Vector3.new(2.2, 0.5, 0.8), CFrame.new(), trim, Enum.Material.SmoothPlastic, o)
+	cockpit.dash = mk(f, Vector3.new(2.2, 0.42, 0.7), CFrame.new(), trim, Enum.Material.SmoothPlastic, o)
 	cockpit.bin = mk(f, Vector3.new(0.46, 0.17, 0.1), CFrame.new(), Color3.fromRGB(10, 40, 34), Enum.Material.Neon, o)
 	cockpit.hood = mk(f, Vector3.new(0.6, 0.12, 0.3), CFrame.new(), trim, Enum.Material.SmoothPlastic, o)
 	cockpit.wheel = mk(f, Vector3.new(0.035, 0.38, 0.38), CFrame.new(), Color3.fromRGB(58, 60, 66), Enum.Material.SmoothPlastic, { shape = Enum.PartType.Cylinder, shadow = false })
@@ -412,9 +412,9 @@ local function layoutCockpit(cf)
 	ensureCockpit()
 	local function at(p, off, rot) p.CFrame = cf * CFrame.new(off * S) * (rot or CFrame.new()) end
 	-- metres relative to the driver's eye (driver sits left of centre, so the cabin centre is +0.38 m right)
-	at(cockpit.dash, Vector3.new(0.38, -0.62, -0.95))
-	at(cockpit.hood, Vector3.new(0, -0.33, -0.78))
-	at(cockpit.bin, Vector3.new(0, -0.34, -0.93), CFrame.Angles(math.rad(-20), 0, 0))
+	at(cockpit.dash, Vector3.new(0.38, -0.6, -1.12))
+	at(cockpit.hood, Vector3.new(0, -0.35, -0.86))
+	at(cockpit.bin, Vector3.new(0, -0.33, -0.98), CFrame.Angles(math.rad(-20), 0, 0))
 	local wrot = CFrame.Angles(math.rad(-22), 0, 0) * CFrame.Angles(0, 0, math.rad(P.steer * -90)) * CFrame.Angles(0, math.rad(90), 0)
 	at(cockpit.wheel, Vector3.new(0, -0.46, -0.6), wrot)
 	at(cockpit.hub, Vector3.new(0, -0.46, -0.585), wrot)
@@ -694,7 +694,7 @@ RunService.RenderStepped:Connect(function(dtRaw)
 		updateRoad(0)
 		updateCamera(dt)
 		rainPart.CFrame = CFrame.new(camera.CFrame.Position + Vector3.new(0, 40, 0))
-		rain.Rate = rainOn and 2200 or 0
+		rain.Rate = rainOn and 1400 or 0
 		return
 	end
 	if state == "paused" then return end
@@ -734,9 +734,9 @@ RunService.RenderStepped:Connect(function(dtRaw)
 	updateIndicators()
 	updateCamera(dt)
 	updateHud(dt)
-	rainPart.CFrame = CFrame.new(camera.CFrame.Position + Vector3.new(0, 30, -35)) * CFrame.Angles(math.atan2(P.v * S, 150), 0, 0)
-	rain.Rate = rainOn and 2200 or 0
-	rain.Speed = NumberRange.new(math.sqrt(150 ^ 2 + (P.v * S) ^ 2) - 10, math.sqrt(150 ^ 2 + (P.v * S) ^ 2) + 10)
+	rainPart.CFrame = CFrame.new(camera.CFrame.Position + Vector3.new(0, 26, -12)) * CFrame.Angles(-math.atan2(P.v * S, 150) * 0.6, 0, 0)
+	rain.Rate = rainOn and 1400 or 0
+	rain.Speed = NumberRange.new(140, 170)
 	local headCar = playerCar
 end)
 
