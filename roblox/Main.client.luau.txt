@@ -1828,7 +1828,8 @@ local function updateCamera(dt)
 		if not CR then CR = want end
 		local k = 1 - math.exp(-3 * dt)
 		CR = { x = CR.x + (want.x - CR.x) * k, y = CR.y + (want.y - CR.y) * k, f = CR.f + (want.f - CR.f) * k }
-		camera.CFrame = CFrame.lookAt(w2v(CR.x, CR.y, CR.f), w2v(P.x, 0.75, P.f + 0.2))
+		-- turn the camera left so the car shows to the right of the menu card
+		camera.CFrame = CFrame.lookAt(w2v(CR.x, CR.y, CR.f), w2v(P.x, 0.75, P.f + 0.2)) * CFrame.Angles(0, math.rad(menu.Visible and 22 or 0), 0)
 		camera.FieldOfView = damp(camera.FieldOfView, 42, 3, dt)
 		setCarVisible(car, true); if cockpit.folder then cockpit.folder.Parent = nil end
 		return
