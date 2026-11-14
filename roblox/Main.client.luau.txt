@@ -390,11 +390,17 @@ local againBtn = button(over, { Size = UDim2.fromOffset(260, 56), AnchorPoint = 
 local function ensureCockpit()
 	if cockpit.dash then return end
 	local f = Instance.new("Folder"); f.Name = "Cockpit"; f.Parent = world
-	cockpit.dash = mk(f, Vector3.new(1.9, 0.5, 0.7), CFrame.new(), Color3.fromRGB(16, 17, 20), Enum.Material.SmoothPlastic, { shadow = false })
-	cockpit.bin = mk(f, Vector3.new(0.7, 0.26, 0.16), CFrame.new(), Color3.fromRGB(8, 24, 20), Enum.Material.Neon, { shadow = false })
-	cockpit.wheel = mk(f, Vector3.new(0.05, 0.36, 0.36), CFrame.new(), Color3.fromRGB(22, 23, 26), Enum.Material.SmoothPlastic, { shape = Enum.PartType.Cylinder, shadow = false })
-	cockpit.pillarL = mk(f, Vector3.new(0.12, 0.9, 0.12), CFrame.new(), Color3.fromRGB(16, 17, 20), Enum.Material.SmoothPlastic, { shadow = false })
-	cockpit.pillarR = mk(f, Vector3.new(0.12, 0.9, 0.12), CFrame.new(), Color3.fromRGB(16, 17, 20), Enum.Material.SmoothPlastic, { shadow = false })
+	local trim = Color3.fromRGB(20, 21, 24)
+	local o = { shadow = false }
+	cockpit.dash = mk(f, Vector3.new(2.2, 0.5, 0.8), CFrame.new(), trim, Enum.Material.SmoothPlastic, o)
+	cockpit.bin = mk(f, Vector3.new(0.46, 0.17, 0.1), CFrame.new(), Color3.fromRGB(10, 40, 34), Enum.Material.Neon, o)
+	cockpit.hood = mk(f, Vector3.new(0.6, 0.12, 0.3), CFrame.new(), trim, Enum.Material.SmoothPlastic, o)
+	cockpit.wheel = mk(f, Vector3.new(0.04, 0.38, 0.38), CFrame.new(), Color3.fromRGB(12, 12, 14), Enum.Material.SmoothPlastic, { shape = Enum.PartType.Cylinder, shadow = false })
+	cockpit.hub = mk(f, Vector3.new(0.06, 0.1, 0.28), CFrame.new(), Color3.fromRGB(30, 31, 34), Enum.Material.SmoothPlastic, o)
+	cockpit.pillarL = mk(f, Vector3.new(0.07, 1.0, 0.07), CFrame.new(), trim, Enum.Material.SmoothPlastic, o)
+	cockpit.pillarR = mk(f, Vector3.new(0.07, 1.0, 0.07), CFrame.new(), trim, Enum.Material.SmoothPlastic, o)
+	cockpit.roof = mk(f, Vector3.new(1.8, 0.08, 0.5), CFrame.new(), trim, Enum.Material.SmoothPlastic, o)
+	cockpit.mirror = mk(f, Vector3.new(0.26, 0.07, 0.03), CFrame.new(), Color3.fromRGB(40, 44, 50), Enum.Material.Glass, { shadow = false, refl = 0.5 })
 	cockpit.folder = f
 end
 local function setCarVisible(car, vis)
@@ -405,11 +411,17 @@ end
 local function layoutCockpit(cf)
 	ensureCockpit()
 	local function at(p, off, rot) p.CFrame = cf * CFrame.new(off * S) * (rot or CFrame.new()) end
-	at(cockpit.dash, Vector3.new(0, -0.62, -1.05))
-	at(cockpit.bin, Vector3.new(-0.4, -0.32, -0.86), CFrame.Angles(math.rad(-18), 0, 0))
-	at(cockpit.wheel, Vector3.new(-0.4, -0.5, -0.7), CFrame.Angles(0, math.rad(90), 0) * CFrame.Angles(math.rad(-65), 0, math.rad(P.steer * -80)))
-	at(cockpit.pillarL, Vector3.new(-0.9, 0.1, -0.7), CFrame.Angles(0, 0, math.rad(-25)))
-	at(cockpit.pillarR, Vector3.new(0.9, 0.1, -0.7), CFrame.Angles(0, 0, math.rad(25)))
+	-- metres relative to the driver's eye (driver sits left of centre, so the cabin centre is +0.38 m right)
+	at(cockpit.dash, Vector3.new(0.38, -0.62, -0.95))
+	at(cockpit.hood, Vector3.new(0, -0.33, -0.78))
+	at(cockpit.bin, Vector3.new(0, -0.34, -0.93), CFrame.Angles(math.rad(-20), 0, 0))
+	local wrot = CFrame.Angles(math.rad(-22), 0, 0) * CFrame.Angles(0, 0, math.rad(P.steer * -90)) * CFrame.Angles(0, math.rad(90), 0)
+	at(cockpit.wheel, Vector3.new(0, -0.5, -0.58), wrot)
+	at(cockpit.hub, Vector3.new(0, -0.5, -0.56), wrot)
+	at(cockpit.pillarL, Vector3.new(-0.5, 0.0, -0.75), CFrame.Angles(math.rad(-38), 0, math.rad(-12)))
+	at(cockpit.pillarR, Vector3.new(1.26, 0.0, -0.75), CFrame.Angles(math.rad(-38), 0, math.rad(12)))
+	at(cockpit.roof, Vector3.new(0.38, 0.38, -0.35))
+	at(cockpit.mirror, Vector3.new(0.38, 0.27, -0.62))
 end
 
 ---------------------------------------------------------------- snapshots / rewind
@@ -508,7 +520,7 @@ local function stepPlayer(dt)
 	local edge = ROAD_HALF - 0.4 - 1.0
 	if math.abs(P.x) > edge then
 		P.x = clamp(P.x, -edge, edge); P.vx = 0
-		P.damage = P.damage + dt * 0.5; P.v = P.v * (1 - dt * 0.6)
+		P.damage = P.damage + dt * 0.18; P.v = P.v * (1 - dt * 0.6)
 		if P.damage >= 1 and not P.crashed then wreck("WRECKED") end
 	end
 end
