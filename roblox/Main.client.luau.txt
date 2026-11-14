@@ -2260,7 +2260,12 @@ local function resetRun()
 	clearTraffic(); clearStunt()
 	P = newP(); P.v = 22; P.fwd = 22
 	updateDiff()
-	for _ = 1, 90 do if #traffic < DIFF.traffic then spawnTraffic(SET.mode == "rush" and rnd(30, 460) or rnd(45, 430)) end end
+	for _ = 1, 90 do
+		if #traffic < DIFF.traffic then
+			local lane, f = math.random(1, 4), SET.mode == "rush" and rnd(30, 460) or rnd(45, 430)
+			if not (math.abs(laneX(lane) - P.x) < 2.5 and f < 80) then spawnTraffic(f, lane) end -- keep your own lane clear at the start
+		end
+	end
 	MD.resetOncoming(); MD.resetPursuit(); MD.resetRush()
 	nextRampF = 260; nextPickF = 120
 	hist = {}; histT = 0; rewinding = nil; ind = 0; camPos = nil; camMode = camMode
