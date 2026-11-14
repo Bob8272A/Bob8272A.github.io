@@ -258,7 +258,7 @@ end
 
 -- rain: an emitter that follows the camera and leans back with speed
 local rainPart = Instance.new("Part"); rainPart.Anchored = true; rainPart.CanCollide = false; rainPart.CanQuery = false
-rainPart.Transparency = 1; rainPart.Size = Vector3.new(80, 1, 70); rainPart.Parent = world
+rainPart.Transparency = 1; rainPart.Size = Vector3.new(56, 1, 48); rainPart.Parent = world
 local rain = Instance.new("ParticleEmitter")
 rain.Rate = 0; rain.Lifetime = NumberRange.new(0.5, 0.7); rain.EmissionDirection = Enum.NormalId.Bottom
 rain.Speed = NumberRange.new(150, 170); rain.Size = NumberSequence.new(0.55); rain.Transparency = NumberSequence.new(0.25); rain.Brightness = 3
