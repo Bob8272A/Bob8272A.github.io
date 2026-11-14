@@ -745,7 +745,7 @@ local function gearBtn(glyph, cb)
 	corner(b, 7); stroke(b, C_PAPER, 1, 0.75)
 	return b
 end
-gearBtn("↻", function() if restartRun then restartRun() end end)
+gearBtn("🔄", function() if restartRun then restartRun() end end)
 gearBtn("⚙", function() if openSettings then openSettings() end end)
 hCombo = text(rightCol, { Size = UDim2.fromOffset(0, 30), AutomaticSize = Enum.AutomaticSize.X, Text = "×2 CLOSE CALLS", TextSize = 15, Font = F_BLACK, TextColor3 = C_INK, BackgroundTransparency = 0, BackgroundColor3 = C_AMBER, Visible = false })
 corner(hCombo, 6); pad(hCombo, 0, 12)
