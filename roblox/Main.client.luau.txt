@@ -1796,7 +1796,11 @@ end
 
 ---------------------------------------------------------------- per-frame helpers
 function poseCar(car, x, f, yaw, roll, y, pitch)
-	car.root.CFrame = roadCF(x, y or 0, f) * CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch or 0, 0, roll or 0)
+	-- tilt about the middle of the car (not the tyres) and lift it so a flipped or tipped car rests ON the road, never in it
+	roll = roll or 0; pitch = pitch or 0
+	local hc = 0.75
+	local lift = math.max(0, car.W / 2 - hc) * math.abs(math.sin(roll)) + math.max(0, car.L / 2 - hc) * math.abs(math.sin(pitch))
+	car.root.CFrame = roadCF(x, (y or 0) + hc + lift, f) * CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, roll) * CFrame.new(0, -hc * S, 0)
 end
 local lastBlink = false
 local AMBER_DIM = Color3.fromRGB(74, 58, 26)
@@ -2546,6 +2550,7 @@ if RunService:IsStudio() then
 			if k then if v == "true" then v = true elseif v == "false" then v = false end; SET[k] = v; applyTod(); refreshMenu() end
 			return
 		end
+		if cmd == "flip" and state == "play" then P.crashed = true; P.crashT = 0; P.crashE = 0.6; P.cRoll = math.pi; P.cPitch = 0; P.cvz = 0; P.fwd = 0; P.v = 0; P.spin = 0; P.msg = "flip test" end
 		if cmd == "ramp" and (state == "play" or state == "paused") and ramps[1] then
 			local r = ramps[1]
 			P.f = r.f - RAMP.L / 2 - 45; P.x = r.x; P.h = 0; P.yaw = 0; P.si = 0; P.v = 42; P.air = false; P.y = 0; P.crashed = false
