@@ -23,7 +23,15 @@ local ROAD_X1 = 19.6
 local TERRAIN = { amp = 0, bend = 0 }
 local function hillH(s) return math.sin(s * 0.0041 + 1.3) + math.sin(s * 0.0093 + 0.4) * 0.55 + math.sin(s * 0.021 + 2.1) * 0.18 end
 local function hillX(s) return math.sin(s * 0.0023 + 0.7) + math.sin(s * 0.0061 + 2.9) * 0.45 end
-local function roadOff(f) return hillX(f) * TERRAIN.bend, hillH(f) * TERRAIN.amp end
+-- the road is built from straight 80 m segments whose ends sit ON the hill curve, so everything (cars, camera, props) must follow the
+-- same straight chords. Sampling the smooth curve here instead is what let a car sink up to ~1.5 m into the road on crests.
+local function roadOff(f)
+	local k = math.floor(f / SEG_LEN)
+	local t = f / SEG_LEN - k
+	local f0, f1 = k * SEG_LEN, (k + 1) * SEG_LEN
+	local x0, x1, h0, h1 = hillX(f0), hillX(f1), hillH(f0), hillH(f1)
+	return (x0 + (x1 - x0) * t) * TERRAIN.bend, (h0 + (h1 - h0) * t) * TERRAIN.amp
+end
 local function rnd(a, b) return a + math.random() * (b - a) end
 local function clamp(v, a, b) return math.max(a, math.min(b, v)) end
 -- road coordinates (x across, y up, f along) -> world studs, following hills and curves
@@ -2669,7 +2677,13 @@ function poseCar(car, x, f, yaw, roll, y, pitch)
 	roll = roll or 0; pitch = pitch or 0
 	local hc = 0.75
 	local lift = math.max(0, car.W / 2 - hc) * math.abs(math.sin(roll)) + math.max(0, car.L / 2 - hc) * math.abs(math.sin(pitch))
-	car.root.CFrame = roadCF(x, (y or 0) + hc + lift, f) * CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, roll) * CFrame.new(0, -hc * S, 0)
+	-- never below the road: where the road bends (segment joints) the nose or tail can dip under the tilted plane, so lift by the worst gap
+	local hl = car.L / 2
+	local _, yc = roadOff(f); local _, yp = roadOff(f + 1); local _, ym = roadOff(f - 1)
+	local _, yf = roadOff(f + hl); local _, yr = roadOff(f - hl)
+	local sl = (yp - ym) / 2
+	lift += math.max(0, yf - (yc + sl * hl), yr - (yc - sl * hl)) + 0.02
+	car.root.CFrame = roadCF(x, math.max(0, y or 0) + hc + lift, f) * CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, roll) * CFrame.new(0, -hc * S, 0)
 end
 local lastBlink = false
 local AMBER_DIM = Color3.fromRGB(74, 58, 26)
