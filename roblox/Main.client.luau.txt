@@ -12,7 +12,7 @@ local StarterGui = game:GetService("StarterGui")
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 local S = 3.571 -- studs per metre
-local SEG_LEN, SEG_COUNT = 80, 20
+local SEG_LEN, SEG_COUNT = 40, 40 -- 40 m rigid pieces: half the kink at every hill crest. SEG_COUNT stays EVEN (street lights and scenery key off slot parity)
 local REWIND_S = 7
 
 -- Web layout: our carriageway is x > 0, the oncoming one is mirrored at x < 0
@@ -1019,6 +1019,9 @@ local function col(r, g, b) return Color3.fromRGB(r, g, b) end
 local function off(a, b) return (rng:NextInteger(0, 1) == 0 and -1 or 1) * rng:NextNumber(OUTER_WALL + a, OUTER_WALL + b) end
 local function rz(L) return rng:NextNumber(-L / 2 + 2, L / 2 - 2) end
 local function chance(p) return rng:NextNumber() < p end
+TERRAIN.dens = SEG_LEN / 80 -- scenery was tuned for 80 m pieces; scale counts so the roadside looks the same with shorter ones
+function TERRAIN.dn(n) local v = n * TERRAIN.dens; local f = math.floor(v); if rng:NextNumber() < v - f then f += 1 end; return f end
+function TERRAIN.chanceD(p) return rng:NextNumber() < p * TERRAIN.dens end
 local function cyl(m, d, h, x, y, z, c, mat, o) -- upright cylinder, d across and h tall
 	o = o or {}; o.shape = Enum.PartType.Cylinder
 	return mk(m, V(h, d, d), at(x, y, z) * CFrame.Angles(0, 0, math.pi / 2), c, mat, o)
@@ -1141,12 +1144,12 @@ THEMES.interstate = {
 	lamp = col(255, 220, 160), lampLight = col(255, 205, 150),
 	hill = { a = col(70, 92, 62), b = col(110, 120, 130), mat = MAT.Grass, mesh = Enum.MeshType.Sphere, s = V(1, 1, 1) },
 	scenery = function(m, L)
-		for _ = 1, 9 do tree(m, off(6, 70), rng:NextNumber(-L / 2, L / 2), rng:NextNumber(6, 12)) end
-		for _ = 1, 5 do
+		for _ = 1, TERRAIN.dn(9) do tree(m, off(6, 70), rng:NextNumber(-L / 2, L / 2), rng:NextNumber(6, 12)) end
+		for _ = 1, TERRAIN.dn(5) do
 			local r = rng:NextNumber(1, 2.2)
 			mk(m, V(r, r * 0.7, r), at(off(3, 9), r * 0.2, rng:NextNumber(-L / 2, L / 2)), GREENS[rng:NextInteger(1, #GREENS)], MAT.Grass, { shape = Enum.PartType.Ball })
 		end
-		if chance(0.5) then
+		if TERRAIN.chanceD(0.5) then
 			local r = rng:NextNumber(1.5, 3.5)
 			mk(m, V(r * 1.4, r, r), at(off(8, 40), r * 0.3, rng:NextNumber(-L / 2, L / 2)) * CFrame.Angles(0, rng:NextNumber(0, 6), 0.2), col(120, 112, 104), MAT.Rock)
 		end
@@ -1162,17 +1165,17 @@ THEMES.mesa = {
 		L.cc.TintColor = col(255, 238, 214)
 	end,
 	scenery = function(m, L)
-		for _, z in ipairs({ -20, 20 }) do -- telephone poles
+		for _, z in ipairs({ 0 }) do -- telephone poles (every 40 m)
 			mk(m, V(0.28, 9, 0.28), at(OUTER_WALL + 4.5, 4.5, z), col(92, 68, 48), MAT.Wood)
 			mk(m, V(2.6, 0.18, 0.18), at(OUTER_WALL + 4.5, 8.3, z), col(92, 68, 48), MAT.Wood)
 		end
-		for _ = 1, 5 do cactus(m, off(5, 60), rz(L), rng:NextNumber(2.5, 5.5)) end
-		for _ = 1, 2 do butte(m, off(50, 160), rz(L), rng:NextNumber(18, 42), rng:NextNumber(14, 42)) end
-		for _ = 1, 5 do
+		for _ = 1, TERRAIN.dn(5) do cactus(m, off(5, 60), rz(L), rng:NextNumber(2.5, 5.5)) end
+		for _ = 1, TERRAIN.dn(2) do butte(m, off(50, 160), rz(L), rng:NextNumber(18, 42), rng:NextNumber(14, 42)) end
+		for _ = 1, TERRAIN.dn(5) do
 			local r = rng:NextNumber(0.8, 3)
 			mk(m, V(r * 1.3, r, r), at(off(4, 50), r * 0.25, rz(L)) * CFrame.Angles(0, rng:NextNumber(0, 6), 0.2), col(168, 104, 74), MAT.Rock)
 		end
-		for _ = 1, 4 do ball(m, rng:NextNumber(0.6, 1.3), off(3, 30), 0.2, rz(L), col(176, 160, 104), MAT.Grass, { shadow = false }) end
+		for _ = 1, TERRAIN.dn(4) do ball(m, rng:NextNumber(0.6, 1.3), off(3, 30), 0.2, rz(L), col(176, 160, 104), MAT.Grass, { shadow = false }) end
 	end,
 }
 THEMES.coast = {
@@ -1185,17 +1188,17 @@ THEMES.coast = {
 		L.cc.TintColor = col(255, 236, 222); L.cc.Saturation = 0.22
 	end,
 	scenery = function(m, L)
-		for _ = 1, 5 do palm(m, rng:NextNumber(OUTER_WALL + 4, OUTER_WALL + 60), rz(L), rng:NextNumber(7, 12)) end
-		for _ = 1, 3 do -- beach umbrellas
+		for _ = 1, TERRAIN.dn(5) do palm(m, rng:NextNumber(OUTER_WALL + 4, OUTER_WALL + 60), rz(L), rng:NextNumber(7, 12)) end
+		for _ = 1, TERRAIN.dn(3) do -- beach umbrellas
 			local x, z, c = rng:NextNumber(OUTER_WALL + 8, OUTER_WALL + 40), rz(L), NEONS[rng:NextInteger(1, #NEONS)]
 			mk(m, V(0.1, 2.2, 0.1), at(x, 1.1, z), col(240, 240, 240))
 			blob(m, 3, 0.7, 3, x, 2.3, z, c:Lerp(Color3.new(1, 1, 1), 0.25))
 		end
-		for _ = 1, 4 do
+		for _ = 1, TERRAIN.dn(4) do
 			local r = rng:NextNumber(1, 2.4)
 			mk(m, V(r, r * 0.7, r), at(rng:NextNumber(OUTER_WALL + 3, OUTER_WALL + 30), r * 0.2, rz(L)), GREENS[rng:NextInteger(1, #GREENS)], MAT.Grass, { shape = Enum.PartType.Ball })
 		end
-		for _ = 1, rng:NextInteger(1, 2) do -- sea stacks standing in the water, some with a lighthouse
+		for _ = 1, TERRAIN.dn(rng:NextInteger(1, 2)) do -- sea stacks standing in the water, some with a lighthouse
 			local x, z, d, top = -rng:NextNumber(OUTER_WALL + 35, OUTER_WALL + 150), rz(L), rng:NextNumber(8, 18), rng:NextNumber(-1, 7)
 			cyl(m, d, 70, x, top - 35, z, col(120, 104, 92), MAT.Slate)
 			if chance(0.2) then
@@ -1217,13 +1220,13 @@ THEMES.yuki = {
 		Lighting.Ambient = col(92, 98, 112); Lighting.OutdoorAmbient = night and col(110, 118, 136) or col(152, 160, 174)
 	end,
 	scenery = function(m, L)
-		for _ = 1, 7 do snowPine(m, off(6, 70), rz(L), rng:NextNumber(6, 12)) end
-		for _ = 1, 2 do blossom(m, off(5, 40), rz(L), rng:NextNumber(4, 6.5)) end
-		for _ = 1, 2 do lantern(m, off(2.2, 3.2), rz(L)) end
-		if chance(0.25) then torii(m, 0, rng:NextNumber(-25, 5), 14, OUTER_WALL + 2.6) -- a great gate over the whole road
-		elseif chance(0.4) then torii(m, off(8, 30), rz(L), rng:NextNumber(4.5, 7), 0) end
-		if chance(0.3) then pagoda(m, off(50, 120), rz(L)) end
-		for _ = 1, 3 do local r = rng:NextNumber(1.2, 3); blob(m, r * 1.5, r * 0.7, r * 1.2, off(4, 40), 0.05, rz(L), col(244, 246, 252)) end
+		for _ = 1, TERRAIN.dn(7) do snowPine(m, off(6, 70), rz(L), rng:NextNumber(6, 12)) end
+		for _ = 1, TERRAIN.dn(2) do blossom(m, off(5, 40), rz(L), rng:NextNumber(4, 6.5)) end
+		for _ = 1, TERRAIN.dn(2) do lantern(m, off(2.2, 3.2), rz(L)) end
+		if TERRAIN.chanceD(0.25) then torii(m, 0, rng:NextNumber(-15, 5), 14, OUTER_WALL + 2.6) -- a great gate over the whole road
+		elseif TERRAIN.chanceD(0.4) then torii(m, off(8, 30), rz(L), rng:NextNumber(4.5, 7), 0) end
+		if TERRAIN.chanceD(0.3) then pagoda(m, off(50, 120), rz(L)) end
+		for _ = 1, TERRAIN.dn(3) do local r = rng:NextNumber(1.2, 3); blob(m, r * 1.5, r * 0.7, r * 1.2, off(4, 40), 0.05, rz(L), col(244, 246, 252)) end
 	end,
 }
 THEMES.neon = {
@@ -1239,14 +1242,14 @@ THEMES.neon = {
 		if not night then Lighting.Brightness = math.min(Lighting.Brightness, 1.6) end
 	end,
 	scenery = function(m, L)
-		for _ = 1, 7 do tower(m, rz(L)) end
+		for _ = 1, TERRAIN.dn(7) do tower(m, rz(L)) end
 		do -- holo billboard
 			local sx, z = (rng:NextInteger(0, 1) == 0 and -1 or 1), rz(L)
 			local x = sx * (OUTER_WALL + 6)
 			for _, dz in ipairs({ -5, 5 }) do mk(m, V(0.35, 8, 0.35), at(x, 4, z + dz), col(50, 54, 70), MAT.Metal) end
 			mk(m, V(0.3, 5, 13), at(x, 10, z), NEONS[rng:NextInteger(1, #NEONS)], MAT.Neon, { tr = 0.2, shadow = false })
 		end
-		if chance(0.35) then -- light arch over the road
+		if TERRAIN.chanceD(0.35) then -- light arch over the road
 			local z, c = rng:NextNumber(-30, 0), NEONS[rng:NextInteger(1, #NEONS)]
 			for _, sx in ipairs({ -1, 1 }) do mk(m, V(0.7, 12, 0.7), at(sx * (OUTER_WALL + 1.6), 6, z), col(50, 54, 70), MAT.Metal) end
 			mk(m, V((OUTER_WALL + 1.6) * 2, 0.5, 0.5), at(0, 12, z), c, MAT.Neon, { shadow = false })
@@ -1270,35 +1273,35 @@ THEMES.lunar = {
 		Lighting.ExposureCompensation = 0.4 + 0.7 * k
 	end,
 	scenery = function(m, L)
-		for _ = 1, 3 do -- craters: a pale rim with a dark floor
+		for _ = 1, TERRAIN.dn(3) do -- craters: a pale rim with a dark floor
 			local x, z, d = off(18, 90), rz(L), rng:NextNumber(6, 22)
 			cyl(m, d * 1.25, 0.1, x, -0.22, z, col(146, 148, 156), MAT.Slate, { shadow = false })
 			cyl(m, d, 0.1, x, -0.19, z, col(84, 86, 94), MAT.Slate, { shadow = false })
 		end
-		for _ = 1, 6 do
+		for _ = 1, TERRAIN.dn(6) do
 			local r = rng:NextNumber(0.6, 3)
 			mk(m, V(r * 1.3, r, r), at(off(4, 70), r * 0.2, rz(L)) * CFrame.Angles(0, rng:NextNumber(0, 6), 0.25), col(112, 114, 122), MAT.Rock)
 		end
-		if chance(0.5) then -- habitat dome with a glowing base ring and an airlock
+		if TERRAIN.chanceD(0.5) then -- habitat dome with a glowing base ring and an airlock
 			local x, z, d = off(22, 80), rz(L), rng:NextNumber(14, 24)
 			ball(m, d, x, -0.25, z, col(226, 232, 240), nil, { refl = 0.2 })
 			cyl(m, d + 1.2, 0.5, x, 0, z, col(120, 190, 255), MAT.Neon, { shadow = false })
 			mk(m, V(4, 3, 4), at(x - (x > 0 and 1 or -1) * d / 2, 1.3, z), col(200, 206, 216), MAT.Metal)
 		end
-		if chance(0.6) then -- solar panels
+		if TERRAIN.chanceD(0.6) then -- solar panels
 			local x, z = off(8, 40), rz(L)
 			for k = -1, 1 do
 				mk(m, V(0.2, 1.6, 0.2), at(x, 0.8, z + k * 3.4), col(150, 156, 166), MAT.Metal)
 				mk(m, V(4.2, 0.12, 2.8), at(x, 1.8, z + k * 3.4) * CFrame.Angles(0, 0, x > 0 and 0.5 or -0.5), col(30, 62, 156), nil, { refl = 0.3 })
 			end
 		end
-		if chance(0.4) then -- comms mast
+		if TERRAIN.chanceD(0.4) then -- comms mast
 			local x, z = off(10, 60), rz(L)
 			mk(m, V(0.5, 22, 0.5), at(x, 11, z), col(170, 176, 186), MAT.Metal)
 			local dish = blob(m, 5, 1.2, 5, x, 19, z + 0.6, col(226, 232, 240)); dish.CFrame = dish.CFrame * CFrame.Angles(0.9, 0, 0)
 			ball(m, 0.7, x, 22.4, z, col(255, 60, 60), MAT.Neon, { shadow = false })
 		end
-		if chance(0.12) then -- a rocket on its pad
+		if TERRAIN.chanceD(0.12) then -- a rocket on its pad
 			local x, z = off(60, 130), rz(L)
 			cyl(m, 14, 0.4, x, 0, z, col(90, 92, 100), MAT.Concrete)
 			cyl(m, 4, 24, x, 13, z, col(240, 240, 244)); ball(m, 4, x, 25, z, col(204, 44, 32))
@@ -1311,7 +1314,7 @@ local MAP = THEMES.interstate
 TERRAIN.map = MAP
 
 medianParts, yellowParts = {}, {}
-local function buildSegment()
+local function buildSegment(slot)
 	local T = MAP
 	local m = Instance.new("Model"); m.Name = "Segment"
 	local L = SEG_LEN + 0.2 -- a hair of overlap hides the joins; more than that would stick up as a lip on hill crests
@@ -1338,8 +1341,9 @@ local function buildSegment()
 		mk(m, V(0.14, 0.02, L), at(sx * 1.8, 0.008, 0), T.yline, T.lineMat, { shadow = false })
 		-- lane dashes: 3 m paint every 12 m
 		for _, lx in ipairs({ 5.5, 9.2, 12.9 }) do
-			for d = 0, SEG_LEN / 12 - 1 do
-				mk(m, V(0.14, 0.02, 3), at(sx * lx, 0.007, -SEG_LEN / 2 + 4 + d * 12), T.line, T.lineMat, { shadow = false })
+			local nd = math.max(1, math.floor(SEG_LEN / 12 + 0.5))
+			for d = 0, nd - 1 do -- evenly spaced, so the dash pattern carries on across every joint
+				mk(m, V(0.14, 0.02, 3), at(sx * lx, 0.007, -SEG_LEN / 2 + (d + 0.5) * SEG_LEN / nd), T.line, T.lineMat, { shadow = false })
 			end
 		end
 		-- verge, guardrail beam and posts, reflector posts
@@ -1361,13 +1365,15 @@ local function buildSegment()
 		yellowParts[#yellowParts + 1] = y
 	end
 	-- street lights on the median, double-armed
-	local lz = 20
+	local lz = 0
+	if slot % 2 == 1 then -- one street light per 80 m, as before (slot parity matches segment parity because SEG_COUNT is even)
 	mk(m, V(0.25, 10, 0.25), at(0, 5, lz), col(84, 88, 94), MAT.Metal).Name = "Pole"
 	for _, sx in ipairs({ -1, 1 }) do
 		mk(m, V(3.4, 0.18, 0.18), at(sx * 1.6, 10, lz), col(84, 88, 94), MAT.Metal)
 		local head = mk(m, V(0.9, 0.18, 0.45), at(sx * 3.2, 9.9, lz), T.lamp, MAT.Neon, { shadow = false })
 		local sl = Instance.new("SpotLight"); sl.Face = Enum.NormalId.Bottom; sl.Angle = 120; sl.Range = 48; sl.Brightness = 2.2; sl.Color = T.lampLight; sl.Parent = head
 		streetLights[#streetLights + 1] = sl
+	end
 	end
 	T.scenery(m, L)
 	m.Parent = world
@@ -1424,12 +1430,12 @@ local function placeSegment(s, k)
 	s.k = k
 	s.model:PivotTo(segCF(k) * CFrame.new(0, -0.1 * S, 0)) -- the pivot is the middle of the 0.2 m road slab, so its TOP is exactly the surface cars sit on
 end
-for i = 1, SEG_COUNT do segs[i] = { model = buildSegment() } end
+for i = 1, SEG_COUNT do segs[i] = { model = buildSegment(i) } end
 local terrainKey = ""
 function updateRoad(f)
 	local key = TERRAIN.amp .. "/" .. TERRAIN.bend
 	if key ~= terrainKey then terrainKey = key; for _, s in ipairs(segs) do s.k = nil end end -- terrain changed: re-place everything
-	local base = math.floor(f / SEG_LEN) - 3
+	local base = math.floor(f / SEG_LEN) - 6 -- same 240 m behind the car as before
 	for i, s in ipairs(segs) do
 		local k = base + ((i - 1 - base) % SEG_COUNT)
 		if s.k ~= k then placeSegment(s, k) end
@@ -1455,7 +1461,7 @@ TERRAIN.setMap = function(id)
 	for _, s in ipairs(segs) do s.model:Destroy() end
 	table.clear(segs); table.clear(roadParts); table.clear(medianParts); table.clear(yellowParts); table.clear(streetLights)
 	rng = Random.new(7)
-	for i = 1, SEG_COUNT do segs[i] = { model = buildSegment() } end
+	for i = 1, SEG_COUNT do segs[i] = { model = buildSegment(i) } end
 	styleHills()
 	for _, s in ipairs(seaParts) do s.part.Transparency = T.sea and 0 or 1 end
 	earth.Transparency = T.earth and 0 or 1
