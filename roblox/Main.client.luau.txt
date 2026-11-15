@@ -603,7 +603,7 @@ function applyWeather()
 	Lighting.OutdoorAmbient = rainOn and Color3.fromRGB(96, 102, 114) or Color3.fromRGB(128, 110, 108)
 	Lighting.ExposureCompensation = night and 0.35 or (rainOn and -0.15 or 0.1)
 	for _, l in ipairs(streetLights) do l.Brightness = night and 3.5 or 2.2; l.Range = night and 56 or 48 end
-	atmosphere.Density = rainOn and 0.5 or 0.3; atmosphere.Offset = rainOn and 0.1 or 0.22
+	atmosphere.Density = rainOn and 0.42 or 0.2; atmosphere.Offset = rainOn and 0.1 or 0.22
 	atmosphere.Color = rainOn and Color3.fromRGB(160, 166, 178) or Color3.fromRGB(236, 186, 150)
 	atmosphere.Decay = rainOn and Color3.fromRGB(96, 100, 112) or Color3.fromRGB(122, 86, 92)
 	atmosphere.Glare = rainOn and 0 or 0.45; atmosphere.Haze = rainOn and 2.8 or 1.3
@@ -898,8 +898,8 @@ local function laneFree(lane, f, except, gap)
 end
 -- traffic mix and paint split follow the web version
 local KINDS = { { "sedan", 40 }, { "suv", 22 }, { "hatch", 12 }, { "pickup", 9 }, { "semi", 11 }, { "van", 6 } }
-local TPAINT = { { Color3.fromRGB(241, 241, 238), 24 }, { Color3.fromRGB(12, 13, 15), 19 }, { Color3.fromRGB(90, 94, 98), 17 }, { Color3.fromRGB(185, 189, 193), 14 },
-	{ Color3.fromRGB(30, 60, 120), 9 }, { Color3.fromRGB(139, 16, 21), 8 }, { Color3.fromRGB(44, 74, 53), 3 }, { Color3.fromRGB(106, 74, 44), 3 }, { Color3.fromRGB(214, 205, 188), 3 } }
+local TPAINT = { { Color3.fromRGB(244, 244, 241), 20 }, { Color3.fromRGB(176, 182, 188), 11 }, { Color3.fromRGB(38, 110, 214), 12 }, { Color3.fromRGB(214, 34, 40), 12 },
+	{ Color3.fromRGB(240, 128, 26), 10 }, { Color3.fromRGB(244, 204, 44), 9 }, { Color3.fromRGB(28, 168, 178), 8 }, { Color3.fromRGB(70, 168, 86), 6 }, { Color3.fromRGB(150, 156, 162), 6 }, { Color3.fromRGB(122, 74, 190), 6 } }
 local function weighted(list) local r = math.random() * 100; for _, e in ipairs(list) do r -= e[2]; if r <= 0 then return e[1] end end return list[1][1] end
 TRAFFIC_PAINT = function() return weighted(TPAINT) end
 local function laneSpeed(lane, kind)
