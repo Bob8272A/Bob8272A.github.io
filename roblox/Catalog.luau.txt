@@ -1,0 +1,133 @@
+-- Interstate Weave garage catalog, shared by the server (validation, purchases) and the client (menu, car stats, looks).
+-- RULE: anything that changes speed or handling is bought with career-run points only. Robux only ever buys looks and convenience.
+local C = {}
+
+---------------------------------------------------------------- Robux game passes
+-- Create each pass in Creator Hub (Monetization > Passes), then paste its id below. 0 means "not on sale yet":
+-- the shop shows it as coming soon, and in Studio the Buy button grants it for free so you can test it.
+C.PASS_IDS = {
+	paint_shift = 0, -- Colour-shift paint
+	paint_chrome = 0, -- Chrome paint
+	wheels_gold = 0, -- Gold wheel set
+	pack_livery = 0, -- Race livery pack (3 liveries)
+	pack_neon = 0, -- Neon night pack (neon lights and tail trails)
+	slots = 0, -- 3 extra build slots
+	double = 0, -- 2x spendable points from every run
+}
+-- shop listing; rp is only a fallback label, the real price is whatever you set in Creator Hub (it is read live when the id is set)
+C.PASSES = {
+	{ key = "paint_shift", name = "Colour-shift paint", rp = 149, kind = "look", desc = "Your paint slowly cycles through the whole colour wheel. Works on every car." },
+	{ key = "paint_chrome", name = "Chrome paint", rp = 249, kind = "look", desc = "A mirror finish. Works on every car." },
+	{ key = "wheels_gold", name = "Gold wheel set", rp = 99, kind = "look", desc = "Gold rims with a black lip. Works on every car." },
+	{ key = "pack_livery", name = "Race livery pack", rp = 129, kind = "look", desc = "Three liveries: side flash, number roundel and hazard sill." },
+	{ key = "pack_neon", name = "Neon night pack", rp = 179, kind = "look", desc = "Colour-matched neon lights plus glowing tail trails." },
+	{ key = "slots", name = "3 extra build slots", rp = 99, kind = "convenience", desc = "Save six builds instead of three." },
+	{ key = "double", name = "Double points", rp = 399, kind = "boost", desc = "Earn 2x spendable points from every run. Scores, leaderboards and car unlocks are unchanged." },
+}
+C.BASE_SLOTS, C.PASS_SLOTS = 3, 3
+
+---------------------------------------------------------------- parts
+-- cat: engine, tyres, brakes, susp are PERFORMANCE (points only). paint, wheels, kit, decal, lights are LOOK.
+-- price: spendable points. gate: lifetime career points needed before it can be bought. robux: a key from PASSES.
+-- fx: topMph (adds), power/grip/brake (multiplier steps, 0.1 = +10%), wet (grip factor in rain, default 0.85), landSoft (stunt landing shake cut)
+C.CATS = {
+	{ id = "engine", name = "Engine", perf = true }, { id = "tyres", name = "Tyres", perf = true },
+	{ id = "brakes", name = "Brakes", perf = true }, { id = "susp", name = "Suspension", perf = true },
+	{ id = "paint", name = "Paint" }, { id = "wheels", name = "Wheels" }, { id = "kit", name = "Body kit" },
+	{ id = "decal", name = "Decals" }, { id = "lights", name = "Lights" },
+}
+C.PARTS = {
+	{ id = "eng_stock", cat = "engine", name = "Stock", desc = "Factory engine", price = 0, fx = {} },
+	{ id = "eng_tuned", cat = "engine", name = "Tuned", desc = "+6 mph top speed, +10% power", price = 2500, fx = { topMph = 6, power = 0.10 } },
+	{ id = "eng_turbo", cat = "engine", name = "Turbo", desc = "+14 mph top speed, +25% power", price = 9000, fx = { topMph = 14, power = 0.25 } },
+	{ id = "eng_twin", cat = "engine", name = "Twin-turbo", desc = "+22 mph top speed, +40% power", price = 20000, gate = 150000, fx = { topMph = 22, power = 0.40 } },
+
+	{ id = "tyr_street", cat = "tyres", name = "Street", desc = "Balanced grip", price = 0, fx = {} },
+	{ id = "tyr_sport", cat = "tyres", name = "Sport", desc = "More dry grip", price = 1800, fx = { grip = 0.06, brake = 0.02 } },
+	{ id = "tyr_slick", cat = "tyres", name = "Slick", desc = "Best dry grip, poor in rain", price = 6000, fx = { grip = 0.11, brake = 0.04, wet = 0.70 } },
+	{ id = "tyr_rain", cat = "tyres", name = "Rain", desc = "Keeps its grip on wet roads", price = 2200, fx = { grip = 0.02, wet = 0.96 } },
+
+	{ id = "brk_stock", cat = "brakes", name = "Stock", desc = "Factory brakes", price = 0, fx = {} },
+	{ id = "brk_big", cat = "brakes", name = "Big brake kit", desc = "Shorter stopping distances", price = 3000, fx = { brake = 0.14 } },
+	{ id = "brk_carbon", cat = "brakes", name = "Carbon ceramic", desc = "The strongest brakes, no fade", price = 11000, fx = { brake = 0.26, grip = 0.01 } },
+
+	{ id = "sus_stock", cat = "susp", name = "Stock", desc = "Soft and stable", price = 0, fx = {} },
+	{ id = "sus_sport", cat = "susp", name = "Sport", desc = "Sharper turn-in", price = 2800, fx = { grip = 0.07 } },
+	{ id = "sus_stunt", cat = "susp", name = "Stunt", desc = "Softer landings off ramps", price = 2800, fx = { grip = 0.02, landSoft = 0.6 } },
+
+	{ id = "pnt_gloss", cat = "paint", name = "Gloss", desc = "Standard gloss in your chosen colour", price = 0 },
+	{ id = "pnt_matte", cat = "paint", name = "Matte", desc = "Flat, satin-black finish", price = 800 },
+	{ id = "pnt_shift", cat = "paint", name = "Colour-shift", desc = "Slowly cycles through every hue", robux = "paint_shift" },
+	{ id = "pnt_chrome", cat = "paint", name = "Chrome", desc = "Mirror finish", robux = "paint_chrome" },
+
+	{ id = "whl_five", cat = "wheels", name = "Five-spoke", desc = "Standard", price = 0 },
+	{ id = "whl_mesh", cat = "wheels", name = "Mesh", desc = "Classic rally look", price = 1200 },
+	{ id = "whl_turbo", cat = "wheels", name = "Turbofan", desc = "Aero covers", price = 1500 },
+	{ id = "whl_gold", cat = "wheels", name = "Gold", desc = "Gold rims with a black lip", robux = "wheels_gold" },
+
+	{ id = "kit_none", cat = "kit", name = "Stock", desc = "No kit", price = 0 },
+	{ id = "kit_street", cat = "kit", name = "Street kit", desc = "Splitter, side skirts and a rear lip", price = 2000 },
+	{ id = "kit_track", cat = "kit", name = "Track kit", desc = "Big wing, canards and a splitter", price = 5000 },
+
+	{ id = "dec_none", cat = "decal", name = "None", desc = "Clean", price = 0 },
+	{ id = "dec_stripes", cat = "decal", name = "Twin stripes", desc = "Choose any colour", price = 900, colour = true },
+	{ id = "dec_flash", cat = "decal", name = "Side flash", desc = "Livery pack", robux = "pack_livery", colour = true },
+	{ id = "dec_roundel", cat = "decal", name = "Number roundel", desc = "Livery pack", robux = "pack_livery", colour = true },
+	{ id = "dec_hazard", cat = "decal", name = "Hazard sill", desc = "Livery pack", robux = "pack_livery" },
+
+	{ id = "lit_stock", cat = "lights", name = "Stock", desc = "White and red", price = 0 },
+	{ id = "lit_glow", cat = "lights", name = "Underglow", desc = "Choose any colour", price = 1000, colour = true },
+	{ id = "lit_neon", cat = "lights", name = "Neon night", desc = "Neon lights and glowing tail trails", robux = "pack_neon", colour = true },
+}
+C.COLOURS = {
+	{ name = "Red", c = Color3.fromRGB(226, 54, 44) }, { name = "Amber", c = Color3.fromRGB(245, 181, 36) },
+	{ name = "Cyan", c = Color3.fromRGB(34, 211, 255) }, { name = "Violet", c = Color3.fromRGB(138, 77, 255) },
+	{ name = "Lime", c = Color3.fromRGB(120, 220, 80) }, { name = "White", c = Color3.fromRGB(240, 240, 240) },
+}
+C.DEFAULT = { engine = "eng_stock", tyres = "tyr_street", brakes = "brk_stock", susp = "sus_stock", paint = "pnt_gloss", wheels = "whl_five",
+	kit = "kit_none", decal = "dec_none", lights = "lit_stock", col = 1 }
+
+local byId, catById = {}, {}
+for _, p in ipairs(C.PARTS) do byId[p.id] = p; p.price = p.price or 0 end
+for _, c in ipairs(C.CATS) do catById[c.id] = c end
+function C.part(id) return byId[id] end
+function C.cat(id) return catById[id] end
+function C.partsIn(cat) local out = {}; for _, p in ipairs(C.PARTS) do if p.cat == cat then out[#out + 1] = p end end return out end
+
+-- a part is owned when it is free, bought with points, or its Robux pass is owned
+function C.owned(state, p)
+	if p.robux then return state.passes and state.passes[p.robux] == true end
+	return p.price == 0 or (state.owned and state.owned[p.id] == true)
+end
+-- a full equipment table from a possibly partial or invalid one (unknown or unowned parts fall back to stock)
+function C.clean(state, eq)
+	local out = {}
+	for k, v in pairs(C.DEFAULT) do out[k] = v end
+	if type(eq) == "table" then
+		for _, cat in ipairs(C.CATS) do
+			local id = eq[cat.id]
+			local p = type(id) == "string" and byId[id]
+			if p and p.cat == cat.id and C.owned(state, p) then out[cat.id] = id end
+		end
+		if type(eq.col) == "number" and eq.col >= 1 and eq.col <= #C.COLOURS and eq.col % 1 == 0 then out.col = eq.col end
+	end
+	return out
+end
+-- base car + equipped performance parts -> tuned stats (top in m/s, power in W). Callers finish drag and gearing themselves.
+function C.tune(base, eq)
+	local c = {}
+	for k, v in pairs(base) do c[k] = v end
+	local top, power, grip, brake, wet, soft = 0, 0, 0, 0, nil, 0
+	for _, cat in ipairs(C.CATS) do
+		if cat.perf then
+			local p = byId[(eq and eq[cat.id]) or C.DEFAULT[cat.id]]
+			local fx = p and p.fx or {}
+			top += (fx.topMph or 0) / 2.23694; power += fx.power or 0; grip += fx.grip or 0; brake += fx.brake or 0
+			wet = fx.wet or wet; soft = math.max(soft, fx.landSoft or 0)
+		end
+	end
+	c.top = base.top + top; c.power = base.power * (1 + power); c.grip = base.grip * (1 + grip); c.brake = base.brake * (1 + brake)
+	c.wet = wet or 0.85; c.landSoft = soft
+	return c
+end
+return C

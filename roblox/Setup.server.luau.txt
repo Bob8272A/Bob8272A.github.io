@@ -3,6 +3,9 @@
 local Players = game:GetService("Players")
 local DataStoreService = game:GetService("DataStoreService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MarketplaceService = game:GetService("MarketplaceService")
+local RunService = game:GetService("RunService")
+local Catalog = require(ReplicatedStorage:WaitForChild("IWCatalog"))
 
 Players.CharacterAutoLoads = false
 
@@ -32,6 +35,8 @@ end
 local load = Instance.new("RemoteFunction"); load.Name = "IWLoad"; load.Parent = ReplicatedStorage
 local save = Instance.new("RemoteEvent"); save.Name = "IWSave"; save.Parent = ReplicatedStorage
 local submit = Instance.new("RemoteEvent"); submit.Name = "IWSubmit"; submit.Parent = ReplicatedStorage
+local garage = Instance.new("RemoteFunction"); garage.Name = "IWGarage"; garage.Parent = ReplicatedStorage -- buy, equip, builds
+local pushState = Instance.new("RemoteEvent"); pushState.Name = "IWState"; pushState.Parent = ReplicatedStorage -- server -> client garage state
 
 -- DataStores only work in a published place with Studio API access turned on; otherwise keep data for this session only.
 local store
@@ -39,18 +44,46 @@ pcall(function() store = DataStoreService:GetDataStore("InterstateWeave_v2") end
 
 local cache, lastSubmit, lastSave, dirty = {}, {}, {}, {}
 
-local function blank() return { settings = {}, career = 0, best = { endless = 0, stunt = 0, pursuit = 0, rush = 0 } } end
+local function blank() return { settings = {}, career = 0, wallet = 0, best = { endless = 0, stunt = 0, pursuit = 0, rush = 0 }, owned = {}, equip = {}, builds = {}, passes = {} } end
+local PASS_BY_ID = {}
+for key, id in pairs(Catalog.PASS_IDS) do if id ~= 0 then PASS_BY_ID[id] = key end end
+local function slotsOf(data) return Catalog.BASE_SLOTS + (data.passes.slots and Catalog.PASS_SLOTS or 0) end
+local function stateOf(data)
+	return { wallet = data.wallet, career = data.career, owned = data.owned, equip = data.equip, builds = data.builds, passes = data.passes, slots = slotsOf(data) }
+end
+local function carOk(id) return type(id) == "string" and SETTINGS.car[id] == true end
 local function loadPlayer(plr)
 	local data = blank()
 	if store then
 		local ok, saved = pcall(function() return store:GetAsync("u" .. plr.UserId) end)
 		if ok and type(saved) == "table" then
 			if type(saved.career) == "number" then data.career = saved.career end
+			if type(saved.wallet) == "number" then data.wallet = math.max(0, math.floor(saved.wallet)) end
+			if type(saved.owned) == "table" then for id, v in pairs(saved.owned) do if v == true and Catalog.part(id) then data.owned[id] = true end end end
+			if type(saved.passes) == "table" then for k, v in pairs(saved.passes) do if v == true and Catalog.PASS_IDS[k] ~= nil then data.passes[k] = true end end end
+			if type(saved.equip) == "table" then for car, eq in pairs(saved.equip) do if carOk(car) and type(eq) == "table" then data.equip[car] = eq end end end
+			if type(saved.builds) == "table" then
+				for i = 1, Catalog.BASE_SLOTS + Catalog.PASS_SLOTS do
+					local b = saved.builds[tostring(i)] -- builds are keyed "1".."6" so the data store and remotes treat them as a dictionary
+					if type(b) == "table" and carOk(b.car) and type(b.eq) == "table" then data.builds[tostring(i)] = { car = b.car, eq = b.eq } end
+				end
+			end
 			if type(saved.best) == "table" then for m in pairs(MODES) do if type(saved.best[m]) == "number" then data.best[m] = saved.best[m] end end end
 			if type(saved.settings) == "table" then for k, v in pairs(saved.settings) do if validSetting(k, v) then data.settings[k] = v end end end
 		end
 	end
 	cache[plr] = data
+	-- game passes bought on another visit (or before they were saved) are checked against Roblox
+	task.spawn(function()
+		local changed = false
+		for key, id in pairs(Catalog.PASS_IDS) do
+			if id ~= 0 and not data.passes[key] then
+				local ok, has = pcall(function() return MarketplaceService:UserOwnsGamePassAsync(plr.UserId, id) end)
+				if ok and has then data.passes[key] = true; changed = true end
+			end
+		end
+		if changed then dirty[plr] = true; if plr.Parent then pushState:FireClient(plr, stateOf(data)) end end
+	end)
 end
 local function flush(plr)
 	local data = cache[plr]
@@ -61,6 +94,10 @@ local function flush(plr)
 			old = type(old) == "table" and old or {}
 			old.settings = data.settings
 			old.career = math.max(tonumber(old.career) or 0, data.career)
+			old.wallet = data.wallet -- spendable points go up and down, so this one is never merged
+			old.owned, old.equip, old.builds = data.owned, data.equip, data.builds
+			old.passes = type(old.passes) == "table" and old.passes or {}
+			for k, v in pairs(data.passes) do old.passes[k] = v end
 			old.best = type(old.best) == "table" and old.best or {}
 			for m in pairs(MODES) do old.best[m] = math.max(tonumber(old.best[m]) or 0, data.best[m]) end
 			return old
@@ -68,6 +105,11 @@ local function flush(plr)
 	end)
 end
 
+local flushTimer = {}
+local function queueFlush(plr) -- coalesce bursts of purchases and equips into one write
+	if flushTimer[plr] then return end
+	flushTimer[plr] = task.delay(4, function() flushTimer[plr] = nil; if plr.Parent then flush(plr) end end)
+end
 Players.PlayerAdded:Connect(loadPlayer)
 for _, p in ipairs(Players:GetPlayers()) do task.spawn(loadPlayer, p) end
 Players.PlayerRemoving:Connect(function(p) flush(p); cache[p] = nil; lastSubmit[p] = nil; lastSave[p] = nil end)
@@ -100,7 +142,70 @@ submit.OnServerEvent:Connect(function(plr, mode, score)
 	score = math.floor(score)
 	local data = cache[plr]; if not data then return end
 	data.career += score
+	data.wallet += score * (data.passes.double and 2 or 1)
 	if score > data.best[mode] then data.best[mode] = score end
 	dirty[plr] = true
 	flush(plr)
 end)
+
+---------------------------------------------------------------- garage: buying, equipping, builds (all checked here, never trusted from the client)
+local lastGarage = {}
+local function reply(data, ok, msg) return ok, msg, stateOf(data) end
+garage.OnServerInvoke = function(plr, action, a, b, c)
+	local data = cache[plr]
+	if not data then return false, "Still loading, try again in a moment" end
+	local now = os.clock()
+	if lastGarage[plr] and now - lastGarage[plr] < 0.03 then return reply(data, false, "Slow down") end
+	lastGarage[plr] = now
+	if action == "state" then return reply(data, true, "")
+	elseif action == "buy" then -- a part bought with spendable points
+		local p = type(a) == "string" and Catalog.part(a)
+		if not p then return reply(data, false, "Unknown part") end
+		if p.robux or p.price <= 0 then return reply(data, false, "That one is not sold for points") end
+		if data.owned[p.id] then return reply(data, false, "You already own it") end
+		if p.gate and data.career < p.gate then return reply(data, false, ("Reach %d career points first"):format(p.gate)) end
+		if data.wallet < p.price then return reply(data, false, "Not enough points") end
+		data.wallet -= p.price; data.owned[p.id] = true; dirty[plr] = true; queueFlush(plr)
+		return reply(data, true, p.name .. " bought")
+	elseif action == "equip" then -- carId, partId
+		local p = type(b) == "string" and Catalog.part(b)
+		if not carOk(a) or not p then return reply(data, false, "Unknown part") end
+		if not Catalog.owned(data, p) then return reply(data, false, "You do not own that yet") end
+		local eq = Catalog.clean(data, data.equip[a]); eq[p.cat] = p.id
+		data.equip[a] = eq; dirty[plr] = true; queueFlush(plr)
+		return reply(data, true, "")
+	elseif action == "colour" then -- carId, colour index
+		if not carOk(a) or type(b) ~= "number" or b < 1 or b > #Catalog.COLOURS or b % 1 ~= 0 then return reply(data, false, "Bad colour") end
+		local eq = Catalog.clean(data, data.equip[a]); eq.col = b
+		data.equip[a] = eq; dirty[plr] = true; queueFlush(plr)
+		return reply(data, true, "")
+	elseif action == "saveBuild" then -- slot, carId: stores what that car is wearing right now
+		if not carOk(b) or type(a) ~= "number" or a % 1 ~= 0 or a < 1 or a > slotsOf(data) then return reply(data, false, "No such slot") end
+		data.builds[tostring(a)] = { car = b, eq = Catalog.clean(data, data.equip[b]) }; dirty[plr] = true; queueFlush(plr)
+		return reply(data, true, "Build saved")
+	elseif action == "loadBuild" then
+		local bld = type(a) == "number" and data.builds[tostring(a)]
+		if not bld then return reply(data, false, "Empty slot") end
+		data.equip[bld.car] = Catalog.clean(data, bld.eq); dirty[plr] = true; queueFlush(plr)
+		local ok, msg, st = reply(data, true, "")
+		return ok, msg, st, bld.car
+	elseif action == "deleteBuild" then
+		if type(a) == "number" and data.builds[tostring(a)] then data.builds[tostring(a)] = nil; dirty[plr] = true; queueFlush(plr) end
+		return reply(data, true, "Build deleted")
+	elseif action == "studioGrant" then -- Studio only: lets you test a Robux item before its pass exists
+		if not RunService:IsStudio() or type(a) ~= "string" then return reply(data, false, "Not available") end
+		if a == "points" then data.wallet += 50000; data.career = math.max(data.career, 200000); dirty[plr] = true; return reply(data, true, "Studio test points") end
+		if Catalog.PASS_IDS[a] ~= 0 then return reply(data, false, "Not available") end
+		data.passes[a] = true; dirty[plr] = true
+		return reply(data, true, "Studio test purchase")
+	end
+	return reply(data, false, "Unknown action")
+end
+
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(plr, passId, purchased)
+	local key, data = PASS_BY_ID[passId], cache[plr]
+	if not purchased or not key or not data then return end
+	data.passes[key] = true; dirty[plr] = true; flush(plr)
+	pushState:FireClient(plr, stateOf(data))
+end)
+Players.PlayerRemoving:Connect(function(p) lastGarage[p] = nil; flushTimer[p] = nil end)

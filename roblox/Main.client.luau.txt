@@ -6,6 +6,7 @@ local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
+local CATALOG = require(game:GetService("ReplicatedStorage"):WaitForChild("IWCatalog")) -- garage parts, prices and stat changes (shared with the server)
 local StarterGui = game:GetService("StarterGui")
 
 local player = Players.LocalPlayer
@@ -112,6 +113,7 @@ local function cp(car, sx, sy, sz, ox, oy, oz, color, mat, o)
 	local rot = o and o.rot or CFrame.new()
 	if o and o.rx then rot = rot * CFrame.Angles(math.rad(o.rx), 0, 0) end
 	p.CFrame = car.root.CFrame * CFrame.new(ox * S, oy * S, oz * S) * rot
+	if color == car.paint and car.hi then local pp = car.pp; if not pp then pp = {}; car.pp = pp end; pp[#pp + 1] = p end -- body paint, for finishes
 	return attach(car, p)
 end
 -- sloped panel: tall end toward +Z (rear) unless flip
@@ -120,6 +122,7 @@ local function cw(car, sx, sy, sz, ox, oy, oz, color, mat, flip, o)
 	w.Size = Vector3.new(sx, sy, sz) * S; w.Color = color; w.Material = mat or Enum.Material.SmoothPlastic
 	if o and o.refl then w.Reflectance = o.refl elseif color == car.paint and mat == nil then w.Reflectance = 0.14 end
 	w.CFrame = car.root.CFrame * CFrame.new(ox * S, oy * S, oz * S) * (flip and CFrame.Angles(0, math.pi, 0) or CFrame.new())
+	if color == car.paint and car.hi then local pp = car.pp; if not pp then pp = {}; car.pp = pp end; pp[#pp + 1] = w end
 	return attach(car, w)
 end
 -- box with rounded long edges: two crossed boxes plus four cylinders along the length
@@ -134,8 +137,11 @@ local function rbox(car, w, h, l, x, y, z, r, color, mat)
 		end
 	end
 end
+local WHEEL_STYLE = { whl_five = { n = 5, th = 0.15 }, whl_mesh = { n = 18, th = 0.055 }, whl_turbo = { n = 0, cover = true }, whl_gold = { n = 5, th = 0.15, rim = Color3.fromRGB(205, 165, 40) } }
 local function wheel(car, x, z, r, w, rimCol, caliper, spokes)
 	local side = x > 0 and 1 or -1
+	local ws = car.look and WHEEL_STYLE[car.look.wheels]
+	if ws and ws.rim then rimCol = ws.rim end
 	cp(car, w, r * 2, r * 2, x, r, z, RUBBER, Enum.Material.Rubber, { shape = Enum.PartType.Cylinder })
 	if not car.hi then
 		cp(car, 0.04, r * 1.3, r * 1.3, x + side * (w / 2 + 0.006), r, z, rimCol, Enum.Material.Metal, { shape = Enum.PartType.Cylinder, refl = 0.2 })
@@ -144,10 +150,15 @@ local function wheel(car, x, z, r, w, rimCol, caliper, spokes)
 	cp(car, w * 0.5, r * 1.92, r * 1.92, x + side * w * 0.3, r, z, Color3.fromRGB(34, 34, 37), Enum.Material.Rubber, { shape = Enum.PartType.Cylinder }) -- sidewall
 	cp(car, 0.03, r * 1.34, r * 1.34, x + side * (w / 2 + 0.006), r, z, Color3.fromRGB(40, 41, 44), Enum.Material.Metal, { shape = Enum.PartType.Cylinder }) -- disc behind spokes
 	if caliper then cp(car, 0.05, r * 0.42, r * 0.3, x + side * (w / 2 - 0.02), r + r * 0.35, z + r * 0.25, caliper, Enum.Material.SmoothPlastic) end
-	local n = spokes or 5
+	local n = ws and ws.n or spokes or 5
+	local th = ws and ws.th or 0.15
+	if ws and ws.cover then -- turbofan: a flat aero disc with dark blade slots
+		cp(car, 0.04, r * 1.7, r * 1.7, x + side * (w / 2 + 0.018), r, z, Color3.fromRGB(150, 155, 162), Enum.Material.Metal, { shape = Enum.PartType.Cylinder, refl = 0.3 })
+		for k = 0, 4 do cp(car, 0.044, r * 1.5, r * 0.06, x + side * (w / 2 + 0.02), r, z, Color3.fromRGB(24, 25, 28), nil, { rot = CFrame.Angles(k * math.pi / 5, 0, 0) }) end
+	end
 	for k = 0, n - 1 do
 		local a = k * 2 * math.pi / n
-		cp(car, 0.035, r * 1.28, r * 0.15, x + side * (w / 2 + 0.02), r, z, rimCol, Enum.Material.Metal, { rot = CFrame.Angles(a, 0, 0), refl = 0.3 })
+		cp(car, 0.035, r * 1.28, r * th, x + side * (w / 2 + 0.02), r, z, rimCol, Enum.Material.Metal, { rot = CFrame.Angles(a, 0, 0), refl = 0.3 })
 	end
 	cp(car, 0.04, r * 1.36, r * 1.36, x + side * (w / 2 + 0.012), r, z, rimCol, Enum.Material.Metal, { shape = Enum.PartType.Cylinder, refl = 0.3, tr = 0.0 }).Transparency = 0.82 -- rim lip
 	cp(car, 0.05, r * 0.36, r * 0.36, x + side * (w / 2 + 0.035), r, z, rimCol, Enum.Material.Metal, { shape = Enum.PartType.Cylinder, refl = 0.35 }) -- hub
@@ -346,6 +357,7 @@ local EXTRA = {
 local function buildWeb(car, c, name, cfg)
 	cfg = cfg or {}
 	local s = WSPEC[name]
+	car.spec = s
 	local W = s.W
 	local X = mkX(car, cfg.accent or ACCENT_DEF, cfg.led or Color3.fromRGB(255, 42, 26))
 	slabs(car, s.body, W, car.paint)
@@ -472,6 +484,16 @@ local OR1_KEY = { -- s, half-width, floor, widest-point height, fender-crown hei
 local OR1_CAN = { { 1.02, 0.46, 0.56 }, { 0.80, 0.585, 0.745 }, { 0.50, 0.675, 0.925 }, { 0.15, 0.725, 1.085 }, { -0.25, 0.735, 1.165 }, { -0.70, 0.705, 1.150 }, { -1.10, 0.620, 1.060 }, { -1.50, 0.500, 0.955 }, { -1.90, 0.360, 0.850 } }
 BUILD.or1 = function(car, c)
 	local W, wr, wheels = 2.04, 0.36, { 1.36, -1.44 }
+	do -- outline for the garage kits and decals
+		local top, bot, can = {}, {}, {}
+		for _, a in ipairs(OR1_KEY) do top[#top + 1] = { a[1], a[4] }; table.insert(bot, 1, { a[1], a[3] }) end
+		for _, a in ipairs(OR1_CAN) do can[#can + 1] = { a[1], a[3] } end
+		for i = #OR1_CAN, 1, -1 do can[#can + 1] = { OR1_CAN[i][1], 0.5 } end
+		local body = {}
+		for _, p in ipairs(top) do body[#body + 1] = p end
+		for _, p in ipairs(bot) do body[#body + 1] = p end
+		car.spec = { W = W, L = 4.66, headS = 2.33, tailS = -2.3, tailY = 0.66, clear = 0.1, wheels = wheels, wr = wr, tireW = 0.31, body = body, shells = { { pts = can, mat = "glass" } } }
+	end
 	local cf = CFG.or1
 	local X = mkX(car, cf.accent, cf.led)
 	local paint = car.paint
@@ -543,6 +565,146 @@ BUILD.or1 = function(car, c)
 	end
 end
 
+---------------------------------------------------------------- garage looks: finishes, body kits, decals and lights
+local CARB = Color3.fromRGB(18, 19, 21)
+local GOLD = Color3.fromRGB(205, 165, 40)
+local function carSpec(car)
+	if car.spec then return car.spec end
+	local L, W = car.L, car.W
+	return { W = W, L = L, headS = L / 2 - 0.05, tailS = -L / 2 + 0.05, tailY = 0.72, clear = 0.2, wheels = { L * 0.3, -L * 0.3 }, wr = 0.35, tireW = 0.3 }
+end
+-- top of a body outline at s, or nil when s is outside it
+local function topAt(sp, s)
+	if not sp.body then return nil end
+	local _, hi = envelope(sp.body, s)
+	if hi == -math.huge then return nil end
+	return hi
+end
+-- paint on any car: matte, chrome or the colour-shifting finish (the shift itself is animated every frame in the garage code)
+local function applyFinish(car, id)
+	car.shift = false
+	if id == "pnt_matte" or id == "pnt_chrome" then
+		for _, p in ipairs(car.pp or {}) do
+			if id == "pnt_matte" then p.Color = Color3.fromRGB(26, 27, 30); p.Material = Enum.Material.SmoothPlastic; p.Reflectance = 0
+			else p.Color = Color3.fromRGB(206, 211, 219); p.Material = Enum.Material.Metal; p.Reflectance = 0.55 end
+		end
+	elseif id == "pnt_shift" then
+		car.shift = true
+		for _, p in ipairs(car.pp or {}) do p.Material = Enum.Material.SmoothPlastic; p.Reflectance = 0.22 end
+	end
+end
+local function frontRearWheel(sp) return sp.wheels[1], sp.wheels[#sp.wheels] end
+local function kitParts(car, sp, id)
+	local W, hs, ts = sp.W, sp.headS, sp.tailS
+	local wf, wrr = frontRearWheel(sp)
+	local rearTop = (topAt(sp, ts + 0.2) or 0.82)
+	if id == "kit_street" then
+		cp(car, W * 0.98, 0.05, 0.3, 0, 0.1, -(hs + 0.05), CARB) -- front splitter
+		for _, sx in ipairs({ -1, 1 }) do
+			cp(car, 0.07, 0.13, (wf - wrr) - 0.7, sx * (W / 2 - 0.005), sp.clear + 0.05, -(wf + wrr) / 2, CARB) -- side skirts
+		end
+		cp(car, W * 0.74, 0.05, 0.2, 0, rearTop + 0.02, -(ts + 0.12), car.paint) -- rear lip
+		cp(car, W * 0.8, 0.07, 0.22, 0, 0.17, -(ts - 0.05), CARB) -- rear valance
+	elseif id == "kit_track" then
+		cp(car, W * 1.02, 0.06, 0.42, 0, 0.1, -(hs + 0.08), CARB) -- big splitter
+		cp(car, W * 0.9, 0.04, 0.1, 0, 0.17, -(hs + 0.2), car.paint)
+		for _, sx in ipairs({ -1, 1 }) do
+			cp(car, 0.04, 0.16, 0.36, sx * (W / 2 - 0.12), 0.3, -(hs - 0.1), CARB) -- canards
+			cp(car, 0.07, 0.13, (wf - wrr) - 0.5, sx * (W / 2 - 0.005), sp.clear + 0.05, -(wf + wrr) / 2, CARB)
+			cp(car, 0.05, 0.44, 0.6, sx * (W * 0.46), rearTop + 0.44, -(ts + 0.34), CARB) -- wing end plates
+			cp(car, 0.08, 0.42, 0.12, sx * (W * 0.3), rearTop + 0.22, -(ts + 0.34), CARB) -- uprights
+		end
+		cp(car, W * 0.98, 0.05, 0.5, 0, rearTop + 0.46, -(ts + 0.34), car.paint, nil, { refl = 0.14 }) -- wing plane
+		cp(car, W * 0.98, 0.03, 0.14, 0, rearTop + 0.5, -(ts + 0.2), CARB)
+		cp(car, W * 0.74, 0.1, 0.38, 0, 0.2, -(ts - 0.08), CARB) -- diffuser
+	end
+end
+-- colour stripes that follow the body outline over the hood, roof and boot (skipped over the glass)
+local function stripes(car, sp, col)
+	if not sp.body then return end
+	local top, bot = -math.huge, math.huge
+	for _, p in ipairs(sp.body) do top = math.max(top, p[1]); bot = math.min(bot, p[1]) end
+	local glass, paint = {}, { sp.body }
+	for _, sh in ipairs(sp.shells or {}) do if sh.mat == "glass" then glass[#glass + 1] = sh.pts else paint[#paint + 1] = sh.pts end end
+	local function hiAt(s)
+		local best
+		for _, poly in ipairs(paint) do local _, hi = envelope(poly, s); if hi ~= -math.huge and (not best or hi > best) then best = hi end end
+		if best then
+			for _, poly in ipairs(glass) do local _, hi = envelope(poly, s); if hi ~= -math.huge and hi > best + 0.02 then return nil end end
+		end
+		return best
+	end
+	local step = 0.22
+	local s = top - 0.1
+	while s - step > bot + 0.1 do
+		local a, b = hiAt(s - 0.001), hiAt(s - step + 0.001)
+		if a and b then
+			for _, sx in ipairs({ -1, 1 }) do topped(car, 0.15, sx * 0.17, math.min(a, b) - 0.03, a + 0.012, b + 0.012, s, s - step, col, nil, { shadow = false }) end
+		end
+		s -= step
+	end
+end
+local function sideY(sp) local lo, hi = envelope(sp.body or { { 1, 0.3 }, { 1, 0.8 }, { -1, 0.8 }, { -1, 0.3 } }, 0); return lo + (hi - lo) * 0.5, lo, hi end
+local function decals(car, sp, id, col)
+	local W, L = sp.W, sp.L
+	local y, lo = sideY(sp)
+	if id == "dec_stripes" then stripes(car, sp, col)
+	elseif id == "dec_flash" then
+		for _, sx in ipairs({ -1, 1 }) do
+			cp(car, 0.012, 0.11, L * 0.46, sx * (W / 2 + 0.008), y, 0, col, nil, { shadow = false })
+			cp(car, 0.012, 0.04, L * 0.34, sx * (W / 2 + 0.008), y - 0.12, -0.1, col, nil, { shadow = false })
+		end
+	elseif id == "dec_roundel" then
+		for _, sx in ipairs({ -1, 1 }) do
+			local d = cp(car, 0.012, 0.5, 0.5, sx * (W / 2 + 0.01), y, -0.25, Color3.fromRGB(244, 244, 241), nil, { shape = Enum.PartType.Cylinder, shadow = false })
+			cp(car, 0.014, 0.42, 0.42, sx * (W / 2 + 0.012), y, -0.25, col, nil, { shape = Enum.PartType.Cylinder, shadow = false })
+			local g = Instance.new("SurfaceGui"); g.Face = sx > 0 and Enum.NormalId.Right or Enum.NormalId.Left; g.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud; g.PixelsPerStud = 50
+			local t = Instance.new("TextLabel"); t.Size = UDim2.fromScale(1, 1); t.BackgroundTransparency = 1; t.Text = "07"; t.Font = Enum.Font.GothamBlack; t.TextScaled = true
+			t.TextColor3 = Color3.fromRGB(244, 244, 241); t.Parent = g
+			local gp = cp(car, 0.016, 0.3, 0.3, sx * (W / 2 + 0.014), y, -0.25, col, nil, { shadow = false, tr = 1 })
+			g.Parent = gp
+		end
+	elseif id == "dec_hazard" then
+		local wf, wrr = frontRearWheel(sp)
+		local n = 9
+		local len = ((wf - wrr) - 0.5) / n
+		for _, sx in ipairs({ -1, 1 }) do
+			for k = 0, n - 1 do
+				cp(car, 0.012, 0.085, len, sx * (W / 2 + 0.006), lo + 0.16, -(wrr + 0.25 + (k + 0.5) * len), k % 2 == 0 and Color3.fromRGB(245, 181, 36) or CARB, nil, { shadow = false })
+			end
+		end
+	end
+end
+local function lights(car, sp, id, col)
+	if id ~= "lit_glow" and id ~= "lit_neon" then return end
+	local W, L = sp.W, sp.L
+	cp(car, W * 1.9, 0.03, L * 1.25, 0, 0.02, 0, col, Enum.Material.Neon, { shape = Enum.PartType.Ball, tr = 0.8, shadow = false })
+	local bar
+	for _, sx in ipairs({ -1, 1 }) do bar = cp(car, 0.05, 0.03, L * 0.72, sx * (W / 2 - 0.12), 0.1, 0, col, Enum.Material.Neon, { shadow = false }) end
+	cp(car, W * 0.8, 0.03, 0.05, 0, 0.1, -(sp.headS - 0.3), col, Enum.Material.Neon, { shadow = false })
+	cp(car, W * 0.8, 0.03, 0.05, 0, 0.1, -(sp.tailS + 0.3), col, Enum.Material.Neon, { shadow = false })
+	local pl = Instance.new("PointLight"); pl.Color = col; pl.Range = id == "lit_neon" and 16 or 12; pl.Brightness = id == "lit_neon" and 2.6 or 1.8; pl.Shadows = false; pl.Parent = bar
+	if id == "lit_neon" then
+		for _, sx in ipairs({ -1, 1 }) do
+			local tp = cp(car, 0.5, 0.05, 0.05, sx * (W / 2 - 0.34), sp.tailY + 0.12, -(sp.tailS - 0.08), col, Enum.Material.Neon, { shadow = false })
+			local a0, a1 = Instance.new("Attachment"), Instance.new("Attachment")
+			a0.Position = Vector3.new(0, 0.06 * S, 0); a1.Position = Vector3.new(0, -0.06 * S, 0); a0.Parent = tp; a1.Parent = tp
+			local tr = Instance.new("Trail"); tr.Attachment0 = a0; tr.Attachment1 = a1; tr.Lifetime = 0.7; tr.LightEmission = 1; tr.FaceCamera = true
+			tr.Color = ColorSequence.new(col); tr.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) })
+			tr.WidthScale = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0.1) }); tr.Parent = tp
+		end
+	end
+end
+-- called by buildCar once the base car exists (the wheel style is read earlier, by wheel())
+local function dressCar(car, look)
+	local sp = carSpec(car)
+	local col = CATALOG.COLOURS[look.col or 1].c
+	applyFinish(car, look.paint)
+	kitParts(car, sp, look.kit)
+	decals(car, sp, look.decal, col)
+	lights(car, sp, look.lights, col)
+end
+
 CAR_DIM = {
 	sedan = { L = 4.85, W = 1.86 }, hatch = { L = 4.2, W = 1.78 }, suv = { L = 4.78, W = 1.93 }, pickup = { L = 5.6, W = 2.0 },
 	van = { L = 5.9, W = 2.0 }, semi = { L = 19.1, W = 2.6 }, police = { L = 4.85, W = 1.86 },
@@ -550,14 +712,16 @@ CAR_DIM = {
 	apex = { L = 4.85, W = 2.08 }, or1 = { L = 4.66, W = 2.04 },
 }
 local PLAYER_KINDS = { vanta = true, strada = true, or1 = true, kestrel = true, phantom = true, apex = true }
-function buildCar(kind, color)
+function buildCar(kind, color, look)
 	local d = CAR_DIM[kind]
 	local car = { kind = kind, L = d.L, W = d.W, paint = color, hi = PLAYER_KINDS[kind] or kind == "police" }
+	car.look = look
 	car.model = Instance.new("Model"); car.model.Name = "Car_" .. kind
 	local root = Instance.new("Part"); root.Anchored = true; root.CanCollide = false; root.CanQuery = false; root.CanTouch = false
 	root.Transparency = 1; root.Size = Vector3.new(0.4, 0.3, 0.4) * S; root.CFrame = CFrame.new(0, 300, 0); root.Parent = car.model
 	car.root = root; car.model.PrimaryPart = root
 	BUILD[kind](car, color)
+	if look then dressCar(car, look) end
 	car.model.Parent = world
 	if PLAYER_KINDS[kind] then
 		local beam = Instance.new("SpotLight"); beam.Face = Enum.NormalId.Front; beam.Angle = 55; beam.Range = 60; beam.Brightness = 3
@@ -812,7 +976,7 @@ local SET = { steer = 1.0, autoCenter = false, rewindFx = true, motionBlur = "li
 	diff = "normal", traffic = 1, weather = "clear", tod = "dusk", paint = 1, car = "vanta", mode = "endless",
 	divided = true, terrain = "flat", track = "night", music = 0.7, tutorialDone = false }
 local MD = {} -- oncoming traffic, Pursuit and Rush hour (filled in further down)
-local PROG = { career = 0, best = { endless = 0, stunt = 0, pursuit = 0, rush = 0 } }
+local PROG = { career = 0, wallet = 0, owned = {}, equip = {}, builds = {}, passes = {}, slots = 3, best = { endless = 0, stunt = 0, pursuit = 0, rush = 0 } }
 local DIFFS = {
 	easy = { traffic = 0.8, speed = 0.92, lane = 0.8, dmg = 0.14, drain = 0.65, cop = 0.92, info = "Lighter, slower traffic. Scrapes barely dent you (about 8 to wreck)." },
 	normal = { traffic = 1, speed = 1, lane = 1, dmg = 0.25, drain = 1, cop = 1, info = "The standard mix. Around four side-swipes and the car is done." },
@@ -822,18 +986,26 @@ local function curDiff() return DIFFS[SET.diff] or DIFFS.normal end
 local MILE = 1609.34
 local GEARS = { 3.3, 2.2, 1.6, 1.25, 1.0, 0.82, 0.68 }
 local TIRE_C = 2 * math.pi * 0.35
-for _, c in ipairs(CARS) do
+local function finishCar(c) -- drag, gearing and the real flat-road top speed from top speed and power
 	c.drag = c.power / (c.top + 3) ^ 3
 	c.final = 7400 * TIRE_C / (60 * GEARS[#GEARS] * c.top)
-	-- real top speed on a flat road with the pedal down (for the garage card)
 	local v = 0
 	for _ = 1, 6000 do
 		local a = (math.min(1520 * (5.4 + c.power / 1.2e6), c.power / math.max(v, 3)) - c.drag * v * v - 1520 * 9.81 * 0.013) / 1520
 		v = math.min(c.top, v + a * 0.02)
 	end
 	c.vmax = v
+	return c
 end
-local function carDef(id) for _, c in ipairs(CARS) do if c.id == id then return c end end return CARS[1] end
+for _, c in ipairs(CARS) do finishCar(c) end
+-- the car as the player has built it: base car plus equipped performance parts (or a try-on set of parts)
+local function carDef(id, eq)
+	local base = CARS[1]
+	for _, c in ipairs(CARS) do if c.id == id then base = c end end
+	return finishCar(CATALOG.tune(base, eq or CATALOG.clean(PROG, PROG.equip[base.id])))
+end
+local previewEq -- garage: parts being tried on before they are bought
+local function lookFor(id) return previewEq or CATALOG.clean(PROG, PROG.equip[id]) end
 local function unlocked(c) return c.unlock <= PROG.career end
 local function paceMult(mph) return mph < 65 and 0.5 or mph < 90 and 1 or mph < 120 and 2 or mph < 160 and 3 or mph < 220 and 4 or 5 end
 local function damp(a, b, k, dt) return b + (a - b) * math.exp(-k * dt) end
@@ -1259,7 +1431,7 @@ local PAINTS = {
 	{ name = "Graphite", c = Color3.fromRGB(44, 47, 52) }, { name = "Pearl", c = Color3.fromRGB(237, 237, 233) },
 	{ name = "Signal", c = Color3.fromRGB(226, 164, 0) },
 }
-local startGame, toMenu, showCar, applyTod
+local startGame, toMenu, showCar, applyTod, openGarage
 
 local menu, over, pauseO, setO, overTitle, overMsg, statVals, refreshMenu
 local function __build_8643()
@@ -1322,6 +1494,7 @@ local function statRow(name)
 end
 statRows.top = statRow("TOP SPEED"); statRows.acc = statRow("POWER"); statRows.grip = statRow("GRIP"); statRows.brake = statRow("BRAKES")
 local blurb = info(statsBox, ""); blurb.TextSize = 13; blurb.Font = Enum.Font.Gotham
+local garBtn = goBtn(fCars, "Garage: parts, builds and shop", true, nil, function() openGarage() end); garBtn.Size = UDim2.new(1, 0, 0, 44); garBtn.TextSize = 15
 local function refreshCars()
 	careerL.Text = commas(PROG.career) .. " career pts"
 	for _, e in ipairs(carBtns) do
@@ -1477,6 +1650,373 @@ end
 end
 __build_8643()
 
+---------------------------------------------------------------- garage: parts, saved builds and the Robux shop
+local GAR = {}
+local function __build_garage()
+	local corner, stroke, pad, vlist, hlist, frame, text, btn, goBtn, seg = UI.corner, UI.stroke, UI.pad, UI.vlist, UI.hlist, UI.frame, UI.text, UI.btn, UI.goBtn, UI.seg
+	local MarketplaceService = game:GetService("MarketplaceService")
+	local PASS_PART = { paint_shift = "pnt_shift", paint_chrome = "pnt_chrome", wheels_gold = "whl_gold", pack_livery = "dec_flash", pack_neon = "lit_neon" }
+	local PASS_PRICE = {}
+	local tab, catSel, selPart = "parts", "engine", nil
+	local O = UI.overlay("Garage"); O.BackgroundTransparency = 1; GAR.overlay = O
+	local panel = frame(O, { Size = UDim2.new(0, 450, 1, -32), Position = UDim2.fromOffset(16, 16), BackgroundTransparency = 0, BackgroundColor3 = C_SIGN })
+	corner(panel, 16); stroke(panel, C_PAPER, 3); pad(panel, 14); vlist(panel, 8)
+
+	local function kfmt(n) return n >= 1000 and (tostring(math.floor(n / 1000)) .. "k") or tostring(n) end
+	local function curEq() return CATALOG.clean(PROG, PROG.equip[SET.car]) end
+	local function passPrice(key)
+		if PASS_PRICE[key] then return "R$ " .. PASS_PRICE[key] end
+		for _, p in ipairs(CATALOG.PASSES) do if p.key == key then return "R$ " .. p.rp end end
+		return "R$"
+	end
+
+	-- header
+	local head = frame(panel, { Size = UDim2.new(1, 0, 0, 36) })
+	text(head, { Size = UDim2.new(1, -240, 1, 0), Text = "GARAGE", TextSize = 28, Font = F_BLACK })
+	local ptsL = text(head, { Size = UDim2.fromOffset(140, 28), Position = UDim2.new(1, -238, 0.5, -14), BackgroundTransparency = 0.7, BackgroundColor3 = Color3.new(0, 0, 0), Text = "0 pts", TextXAlignment = Enum.TextXAlignment.Center, Font = F_MONO, TextSize = 13 })
+	corner(ptsL, 14)
+	local backB = btn(head, { Size = UDim2.fromOffset(90, 32), Position = UDim2.new(1, -90, 0.5, -16), Text = "BACK", TextSize = 14, BackgroundTransparency = 1 })
+	corner(backB, 8); stroke(backB, C_PAPER, 2, 0.5)
+
+	-- car picker
+	local carRow = frame(panel, { Size = UDim2.new(1, 0, 0, 40) })
+	local prevB = btn(carRow, { Size = UDim2.fromOffset(40, 40), Text = "<", TextSize = 20, BackgroundTransparency = 0.8, BackgroundColor3 = Color3.new(0, 0, 0) }); corner(prevB, 20)
+	local nextB = btn(carRow, { Size = UDim2.fromOffset(40, 40), Position = UDim2.new(1, -40, 0, 0), Text = ">", TextSize = 20, BackgroundTransparency = 0.8, BackgroundColor3 = Color3.new(0, 0, 0) }); corner(nextB, 20)
+	local carName = text(carRow, { Size = UDim2.new(1, -100, 1, 0), Position = UDim2.fromOffset(50, 0), Text = "", TextSize = 20, Font = F_BLACK, TextXAlignment = Enum.TextXAlignment.Center })
+
+	-- stat bars: the white bar is what you have, the amber or red tail is what the selected part would change
+	local statsBox = frame(panel, { Size = UDim2.new(1, 0, 0, 82) }); vlist(statsBox, 6)
+	local rows = {}
+	for i, name in ipairs({ "TOP SPEED", "POWER", "GRIP", "BRAKES" }) do
+		local r = frame(statsBox, { Size = UDim2.new(1, 0, 0, 16) })
+		text(r, { Size = UDim2.fromOffset(82, 16), Text = name, TextSize = 11, Font = F_MONO, TextColor3 = C_SOFT })
+		local bar = frame(r, { Size = UDim2.new(1, -200, 0, 8), Position = UDim2.new(0, 88, 0.5, -4), BackgroundTransparency = 0.75, BackgroundColor3 = Color3.new(0, 0, 0) }); corner(bar, 4)
+		local base = frame(bar, { Size = UDim2.fromScale(0, 1), BackgroundTransparency = 0, BackgroundColor3 = C_PAPER }); corner(base, 4)
+		local delta = frame(bar, { Size = UDim2.fromScale(0, 1), BackgroundTransparency = 0, BackgroundColor3 = C_AMBER }); corner(delta, 4)
+		local val = text(r, { Size = UDim2.fromOffset(108, 16), Position = UDim2.new(1, -108, 0, 0), Text = "", TextSize = 11, Font = F_MONO, TextXAlignment = Enum.TextXAlignment.Right, RichText = true })
+		rows[i] = { base = base, delta = delta, val = val }
+	end
+	local function readings(c)
+		return { c.vmax * 2.23694, c.power / 745.7 / 2.2, c.grip, c.brake }
+	end
+	local function fracs(c)
+		return { c.vmax * 2.23694 / 420, math.min(1, c.power / 4.6e6), math.min(1, c.grip / 1.9), math.min(1, c.brake / 2.4) }
+	end
+	local FMT = { "%d mph", "%d hp", "%.2f g", "%.2f" }
+	local DFMT = { "%+d", "%+d", "%+.2f", "%+.2f" }
+	local function renderStats(candEq)
+		local cur = carDef(SET.car)
+		local cand = candEq and carDef(SET.car, candEq) or nil
+		local a, fa = readings(cur), fracs(cur)
+		local b, fb = readings(cand or cur), fracs(cand or cur)
+		for i, r in ipairs(rows) do
+			local lo, hi = math.min(fa[i], fb[i]), math.max(fa[i], fb[i])
+			r.base.Size = UDim2.fromScale(math.min(1, lo), 1)
+			r.delta.Position = UDim2.fromScale(math.min(1, lo), 0); r.delta.Size = UDim2.fromScale(math.max(0, math.min(1, hi) - math.min(1, lo)), 1)
+			r.delta.BackgroundColor3 = fb[i] >= fa[i] and C_AMBER or C_BRAKE
+			local v = i <= 2 and FMT[i]:format(math.floor(a[i])) or FMT[i]:format(a[i])
+			local d = b[i] - a[i]
+			local shown = i <= 2 and math.floor(b[i]) - math.floor(a[i]) or d
+			if cand and math.abs(d) > (i <= 2 and 0.5 or 0.004) then
+				v ..= (' <font color="%s">%s</font>'):format(d > 0 and "#f5b524" or "#e2362c", DFMT[i]:format(shown))
+			end
+			r.val.Text = v
+		end
+	end
+
+	-- tabs
+	local renderContent
+	local _, rTab = seg(panel, { { "parts", "Parts" }, { "builds", "Builds" }, { "shop", "Shop" } }, function() return tab end, function(v) tab = v; selPart = nil; previewEq = nil; showCar(); renderContent() end)
+
+	-- scrolling content
+	local content = Instance.new("ScrollingFrame"); content.BackgroundTransparency = 1; content.BorderSizePixel = 0
+	content.Size = UDim2.new(1, 0, 1, -292); content.AutomaticCanvasSize = Enum.AutomaticSize.Y; content.CanvasSize = UDim2.new()
+	content.ScrollBarThickness = 5; content.ScrollBarImageColor3 = C_PAPER; content.LayoutOrder = frame(nil, {}).LayoutOrder; content.Parent = panel
+	local cl = vlist(content, 7); pad(content, 0, 8, 0, 0)
+
+	-- footer
+	local driveB = goBtn(panel, "Drive this build", false, nil, function() GAR.drive() end)
+
+	---------------------------------------------------------------- server calls and state
+	local function applyState(st)
+		if type(st) ~= "table" then return end
+		if type(st.wallet) == "number" then PROG.wallet = st.wallet end
+		if type(st.career) == "number" then PROG.career = math.max(PROG.career, st.career) end
+		if type(st.owned) == "table" then PROG.owned = st.owned end
+		if type(st.equip) == "table" then PROG.equip = st.equip end
+		if type(st.builds) == "table" then PROG.builds = st.builds end
+		if type(st.passes) == "table" then PROG.passes = st.passes end
+		if type(st.slots) == "number" then PROG.slots = st.slots end
+	end
+	GAR.apply = function(st) applyState(st); CUR = carDef(SET.car) end
+	local function call(action, a, b)
+		local fn = RS:FindFirstChild("IWGarage")
+		if not fn then return false, "The garage server is not running" end
+		local ok, r1, r2, r3, r4 = pcall(function() return fn:InvokeServer(action, a, b) end)
+		if not ok then return false, "Could not reach the server" end
+		if type(r3) == "table" then applyState(r3) end
+		return r1, r2, r3, r4
+	end
+	local renderAll
+	GAR.sync = function()
+		task.spawn(function()
+			call("state")
+			CUR = carDef(SET.car)
+			if O.Visible then renderAll() end
+		end)
+	end
+	task.spawn(function()
+		local ev = RS:WaitForChild("IWState", 15)
+		if ev then ev.OnClientEvent:Connect(function(st)
+			applyState(st); CUR = carDef(SET.car)
+			if O.Visible then renderAll() end
+			if state == "menu" then showCar() end
+		end) end
+	end)
+	-- live Robux prices for passes that have an id
+	task.spawn(function()
+		for key, id in pairs(CATALOG.PASS_IDS) do
+			if id ~= 0 then
+				local ok, info = pcall(function() return MarketplaceService:GetProductInfo(id, Enum.InfoType.GamePass) end)
+				if ok and type(info) == "table" and info.PriceInRobux then PASS_PRICE[key] = info.PriceInRobux end
+			end
+		end
+	end)
+
+	---------------------------------------------------------------- actions
+	local function eqWith(p) local e = curEq(); e[p.cat] = p.id; return e end
+	local function equip(p)
+		local e = curEq(); e[p.cat] = p.id; PROG.equip[SET.car] = e
+		previewEq = nil; CUR = carDef(SET.car)
+		showCar(); renderAll()
+		task.spawn(function()
+			local ok, msg = call("equip", SET.car, p.id)
+			if not ok then popup("COULD NOT EQUIP", msg or ""); CUR = carDef(SET.car); showCar(); renderAll() end
+		end)
+	end
+	local function promptPass(key)
+		local id = CATALOG.PASS_IDS[key]
+		if id ~= 0 and id then
+			MarketplaceService:PromptGamePassPurchase(player, id) -- the result comes back through the IWState event
+		elseif RunService:IsStudio() then
+			task.spawn(function()
+				local ok, msg = call("studioGrant", key)
+				popup(ok and "STUDIO TEST PURCHASE" or "NOPE", msg or ""); showCar(); renderAll()
+			end)
+		else
+			popup("COMING SOON", "This item is not on sale yet")
+		end
+	end
+	local function buy(p)
+		task.spawn(function()
+			local ok, msg = call("buy", p.id)
+			if ok then popup("BOUGHT", p.name); task.wait(0.1); equip(p) else popup("CAN'T BUY", msg or ""); renderAll() end
+		end)
+	end
+	local function select(p)
+		selPart = p.id
+		if CATALOG.owned(PROG, p) then
+			if curEq()[p.cat] ~= p.id then equip(p) else previewEq = nil; renderAll() end
+		else
+			previewEq = eqWith(p); showCar(); renderAll()
+		end
+	end
+
+	---------------------------------------------------------------- tabs
+	local function clear() for _, c in ipairs(content:GetChildren()) do if not c:IsA("UIListLayout") and not c:IsA("UIPadding") then c:Destroy() end end end
+	local function label(s) return text(content, { Size = UDim2.new(1, 0, 0, 16), Text = s, TextSize = 11, Font = F_BLACK, TextColor3 = C_SOFT }) end
+	local function pill(parent, props, cb) local b = btn(parent, props, cb); corner(b, 8); return b end
+
+	local function pillFor(p)
+		local eq = curEq()
+		if eq[p.cat] == p.id then return "EQUIPPED", "eq" end
+		if CATALOG.owned(PROG, p) then return "EQUIP", "own" end
+		if p.robux then return passPrice(p.robux), "robux" end
+		if p.gate and PROG.career < p.gate then return "LOCKED " .. kfmt(p.gate), "lock" end
+		return commas(p.price) .. " pts", PROG.wallet >= p.price and "buy" or "poor"
+	end
+	local PILL = { eq = { Color3.new(1, 1, 1), 0.82, C_PAPER }, own = { C_PAPER, 0, C_DEEP }, buy = { C_PAPER, 0, C_DEEP }, poor = { Color3.new(1, 1, 1), 0.85, C_SOFT },
+		robux = { C_AMBER, 0, C_INK }, lock = { Color3.new(1, 1, 1), 0.88, C_SOFT } }
+
+	local function renderParts()
+		local eqNow = curEq()
+		-- categories: performance (points only) and look
+		for _, perf in ipairs({ true, false }) do
+			label(perf and "PERFORMANCE · EARNED WITH POINTS" or "LOOK")
+			local grid = frame(content, { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y })
+			local gl = Instance.new("UIGridLayout"); gl.CellSize = UDim2.new(perf and 0.25 or 0.2, -5, 0, 30); gl.CellPadding = UDim2.fromOffset(5, 5); gl.SortOrder = Enum.SortOrder.LayoutOrder; gl.Parent = grid
+			for _, c in ipairs(CATALOG.CATS) do
+				if (c.perf and true or false) == perf then
+					local on = c.id == catSel
+					local b = btn(grid, { Text = c.name, TextSize = 12, BackgroundTransparency = on and 0 or 1, BackgroundColor3 = C_PAPER, TextColor3 = on and C_DEEP or C_PAPER }, function()
+						catSel = c.id; selPart = nil; previewEq = nil; showCar(); renderAll()
+					end)
+					corner(b, 15); stroke(b, C_PAPER, 1.5, on and 1 or 0.55)
+				end
+			end
+		end
+		local cat = CATALOG.cat(catSel)
+		-- colour choice for decals and lights
+		local eqPart = CATALOG.part(eqNow[catSel])
+		local shownPart = selPart and CATALOG.part(selPart) or eqPart
+		if shownPart and shownPart.colour then
+			label("COLOUR")
+			local sw = frame(content, { Size = UDim2.new(1, 0, 0, 32) }); hlist(sw, 8)
+			for i, col in ipairs(CATALOG.COLOURS) do
+				local b = btn(sw, { Size = UDim2.fromOffset(30, 30), BackgroundTransparency = 0, BackgroundColor3 = col.c, Text = "" }, function()
+					local e = curEq(); e.col = i; PROG.equip[SET.car] = e
+					if previewEq then previewEq.col = i end
+					showCar(); renderAll()
+					task.spawn(function() call("colour", SET.car, i) end)
+				end)
+				corner(b, 15); stroke(b, C_PAPER, 2, eqNow.col == i and 0 or 0.8)
+			end
+		end
+		label(string.upper(cat.name))
+		local cand
+		for _, p in ipairs(CATALOG.partsIn(catSel)) do
+			local sel = selPart == p.id
+			local row = btn(content, { Size = UDim2.new(1, 0, 0, 56), BackgroundTransparency = 0.72, BackgroundColor3 = Color3.new(0, 0, 0), Text = "" }, function() select(p) end)
+			corner(row, 9); stroke(row, C_AMBER, 2, sel and 0 or 1)
+			text(row, { Size = UDim2.new(1, -140, 0, 20), Position = UDim2.fromOffset(10, 8), Text = p.name, TextSize = 15, Font = F_BLACK })
+			text(row, { Size = UDim2.new(1, -140, 0, 16), Position = UDim2.fromOffset(10, 30), Text = p.desc, TextSize = 11, Font = F_MONO, TextColor3 = C_SOFT })
+			local label2, kind = pillFor(p)
+			local st = PILL[kind]
+			local pb = pill(row, { Size = UDim2.fromOffset(118, 34), Position = UDim2.new(1, -126, 0.5, -17), Text = label2, TextSize = 12, BackgroundTransparency = st[2], BackgroundColor3 = st[1], TextColor3 = st[3] }, function()
+				selPart = p.id
+				if kind == "own" then equip(p)
+				elseif kind == "buy" then buy(p)
+				elseif kind == "robux" then promptPass(p.robux)
+				elseif kind == "poor" then popup("NOT ENOUGH POINTS", ("Earn %s more by driving"):format(commas(p.price - PROG.wallet))); previewEq = eqWith(p); showCar(); renderAll()
+				elseif kind == "lock" then popup("LOCKED", ("Reach %s career points to unlock"):format(commas(p.gate)))
+				end
+			end)
+			if sel or (not selPart and eqNow[p.cat] == p.id) then cand = cand or (sel and eqWith(p) or nil) end
+		end
+		return cand
+	end
+
+	local function renderBuilds()
+		label(("SAVED BUILDS · %d SLOTS"):format(PROG.slots))
+		for i = 1, CATALOG.BASE_SLOTS + CATALOG.PASS_SLOTS do
+			local key = tostring(i)
+			local b = PROG.builds[key]
+			local row = frame(content, { Size = UDim2.new(1, 0, 0, 70), BackgroundTransparency = 0.72, BackgroundColor3 = Color3.new(0, 0, 0) }); corner(row, 9)
+			if i > PROG.slots then
+				text(row, { Size = UDim2.new(1, -120, 0, 20), Position = UDim2.fromOffset(10, 12), Text = "Build " .. i .. " · locked", TextSize = 15, Font = F_BLACK, TextColor3 = C_SOFT })
+				text(row, { Size = UDim2.new(1, -120, 0, 16), Position = UDim2.fromOffset(10, 36), Text = "Part of the extra slots pass", TextSize = 11, Font = F_MONO, TextColor3 = C_SOFT })
+				pill(row, { Size = UDim2.fromOffset(90, 34), Position = UDim2.new(1, -98, 0.5, -17), Text = "SHOP", TextSize = 12, BackgroundTransparency = 0, BackgroundColor3 = C_AMBER, TextColor3 = C_INK }, function() tab = "shop"; rTab(); renderAll() end)
+			else
+				local title = "Build " .. i .. " · empty"
+				local sub = "Saves the parts on your current car"
+				if b then
+					title = "Build " .. i .. " · " .. carDef(b.car).name
+					local names = {}
+					for _, c in ipairs(CATALOG.CATS) do
+						local pid = b.eq[c.id]
+						if pid and pid ~= CATALOG.DEFAULT[c.id] and CATALOG.part(pid) then names[#names + 1] = CATALOG.part(pid).name end
+					end
+					sub = #names > 0 and table.concat(names, " · ") or "All stock"
+				end
+				text(row, { Size = UDim2.new(1, -170, 0, 20), Position = UDim2.fromOffset(10, 10), Text = title, TextSize = 15, Font = F_BLACK })
+				text(row, { Size = UDim2.new(1, -170, 0, 30), Position = UDim2.fromOffset(10, 32), Text = sub, TextSize = 11, Font = F_MONO, TextColor3 = C_SOFT, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top })
+				pill(row, { Size = UDim2.fromOffset(70, 28), Position = UDim2.new(1, -150, 0, 8), Text = "SAVE", TextSize = 12, BackgroundTransparency = 0, BackgroundColor3 = C_PAPER, TextColor3 = C_DEEP }, function()
+					task.spawn(function() local ok, msg = call("saveBuild", i, SET.car); popup(ok and "BUILD SAVED" or "COULD NOT SAVE", ok and ("Slot " .. i) or (msg or "")); renderAll() end)
+				end)
+				if b then
+					pill(row, { Size = UDim2.fromOffset(70, 28), Position = UDim2.new(1, -76, 0, 8), Text = "LOAD", TextSize = 12, BackgroundTransparency = 0, BackgroundColor3 = C_AMBER, TextColor3 = C_INK }, function()
+						task.spawn(function()
+							local ok, msg, _, car = call("loadBuild", i)
+							if ok and car and unlocked(carDef(car)) then SET.car = car; saveSettings() end
+							CUR = carDef(SET.car); previewEq = nil; showCar(); renderAll()
+							popup(ok and "BUILD LOADED" or "COULD NOT LOAD", ok and carDef(SET.car).name or (msg or ""))
+						end)
+					end)
+					pill(row, { Size = UDim2.fromOffset(70, 26), Position = UDim2.new(1, -76, 0, 40), Text = "DELETE", TextSize = 11, BackgroundTransparency = 0.8, BackgroundColor3 = Color3.new(1, 1, 1), TextColor3 = C_SOFT }, function()
+						task.spawn(function() call("deleteBuild", i); renderAll() end)
+					end)
+				end
+			end
+		end
+	end
+
+	local function renderShop()
+		text(content, { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Text = "Robux only buys looks, convenience and boosts. Speed and handling parts can only be earned with points, so the leaderboard stays fair.", TextWrapped = true, TextSize = 12, Font = F_MONO, TextColor3 = C_SOFT })
+		for _, ps in ipairs(CATALOG.PASSES) do
+			local owned = PROG.passes[ps.key] == true
+			local row = frame(content, { Size = UDim2.new(1, 0, 0, 92), BackgroundTransparency = 0.72, BackgroundColor3 = Color3.new(0, 0, 0) }); corner(row, 9)
+			text(row, { Size = UDim2.new(1, -140, 0, 20), Position = UDim2.fromOffset(10, 8), Text = ps.name, TextSize = 15, Font = F_BLACK })
+			text(row, { Size = UDim2.new(1, -140, 0, 12), Position = UDim2.fromOffset(10, 28), Text = string.upper(ps.kind), TextSize = 10, Font = F_BLACK, TextColor3 = C_AMBER })
+			text(row, { Size = UDim2.new(1, -140, 0, 40), Position = UDim2.fromOffset(10, 44), Text = ps.desc, TextSize = 11, Font = F_MONO, TextColor3 = C_SOFT, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top })
+			pill(row, { Size = UDim2.fromOffset(118, 34), Position = UDim2.new(1, -126, 0, 10), Text = owned and "OWNED" or passPrice(ps.key), TextSize = 12, BackgroundTransparency = owned and 0.82 or 0,
+				BackgroundColor3 = owned and Color3.new(1, 1, 1) or C_AMBER, TextColor3 = owned and C_PAPER or C_INK }, function() if not owned then promptPass(ps.key) end end)
+			local pid = PASS_PART[ps.key]
+			if pid then
+				pill(row, { Size = UDim2.fromOffset(118, 28), Position = UDim2.new(1, -126, 0, 52), Text = "TRY ON", TextSize = 11, BackgroundTransparency = 0.8, BackgroundColor3 = Color3.new(1, 1, 1), TextColor3 = C_PAPER }, function()
+					local p = CATALOG.part(pid); previewEq = eqWith(p); showCar(); popup("TRY ON", p.name .. " on your " .. carDef(SET.car).name)
+				end)
+			end
+		end
+	end
+
+	renderContent = function()
+		clear()
+		local cand
+		if tab == "parts" then cand = renderParts() elseif tab == "builds" then renderBuilds() else renderShop() end
+		renderStats(cand)
+	end
+	renderAll = function()
+		ptsL.Text = commas(PROG.wallet) .. " pts"
+		carName.Text = carDef(SET.car).name
+		rTab()
+		renderContent()
+	end
+	GAR.render = renderAll
+
+	---------------------------------------------------------------- opening, closing and driving
+	local function stepCar(d)
+		local list = {}
+		for _, c in ipairs(CARS) do if unlocked(c) then list[#list + 1] = c end end
+		local idx = 1
+		for i, c in ipairs(list) do if c.id == SET.car then idx = i end end
+		local n = list[(idx - 1 + d) % #list + 1]
+		SET.car = n.id; CUR = carDef(n.id); previewEq = nil; selPart = nil
+		saveSettings(); showCar(); renderAll()
+	end
+	prevB.MouseButton1Click:Connect(function() play("tick", 0.3, 1.3); stepCar(-1) end)
+	nextB.MouseButton1Click:Connect(function() play("tick", 0.3, 1.3); stepCar(1) end)
+	openGarage = function()
+		menu.Visible = false; O.Visible = true
+		tab = "parts"; selPart = nil; previewEq = nil
+		CUR = carDef(SET.car); showCar(); renderAll(); GAR.sync()
+	end
+	local function close()
+		previewEq = nil; O.Visible = false; menu.Visible = true
+		CUR = carDef(SET.car); showCar(); refreshMenu()
+	end
+	backB.MouseButton1Click:Connect(function() play("tick", 0.3, 1.3); close() end)
+	GAR.drive = function()
+		previewEq = nil; O.Visible = false
+		CUR = carDef(SET.car); showCar(); startGame()
+	end
+	-- Studio test helpers
+	GAR.open = function() openGarage() end
+	GAR.cat = function(id) catSel = id; selPart = nil; previewEq = nil; showCar(); renderAll() end
+	GAR.sel = function(id) local p = CATALOG.part(id); if p then catSel = p.cat; tab = "parts"; select(p) end end
+	GAR.tab = function(t) tab = t; selPart = nil; previewEq = nil; showCar(); renderAll() end
+	GAR.give = function() task.spawn(function() call("studioGrant", "points"); renderAll() end) end
+
+	-- the colour-shift paint cycles through every hue
+	RunService.Heartbeat:Connect(function()
+		local c = playerCar
+		if c and c.shift and c.pp then
+			local col = Color3.fromHSV((os.clock() * 0.08) % 1, 0.78, 0.92)
+			for _, p in ipairs(c.pp) do p.Color = col end
+		end
+	end)
+end
+__build_garage()
+
 local crash, sideSwipe, nearMiss, poseCar
 ---------------------------------------------------------------- cockpit (camera-attached dash)
 local function ensureCockpit()
@@ -1590,7 +2130,7 @@ local function stuntLand()
 	local pts = math.floor((dist * 6 + P.cleared * 400) * paceMult(P.fwd * 2.23694))
 	P.score += pts
 	popup(("BIG AIR · %d m"):format(math.floor(dist)), (P.cleared > 0 and ("Cleared %d · "):format(P.cleared) or "") .. "+" .. commas(pts))
-	play("land", 0.6, 0.7); shake = math.max(shake, 0.5)
+	play("land", 0.6, 0.7); shake = math.max(shake, 0.5 * (1 - (CUR.landSoft or 0)))
 	P.cleared = 0
 end
 local function updateStunt(dt)
@@ -1756,7 +2296,7 @@ local function stepPlayer(dt)
 	local siEased = P.si * (0.35 + 0.65 * math.abs(P.si))
 	P.throttle = damp(P.throttle, gas and 1 or 0, 8, dt)
 	local v = math.max(P.v, 0.1)
-	local wet = SET.weather == "rain" and 0.85 or 1
+	local wet = SET.weather == "rain" and (car.wet or 0.85) or 1
 	local maxYaw = math.min(0.9 + sens * 0.45, ((6.2 + sens * 2.8) * car.grip * wet) / math.max(v, 4))
 	-- with auto-straighten off, letting go holds the current heading
 	local centring = SET.autoCenter and clamp(-P.h * (1.8 + sens * 1.0), -maxYaw, maxYaw) or 0
@@ -1967,7 +2507,7 @@ local function updateCamera(dt)
 		local k = 1 - math.exp(-3 * dt)
 		CR = { x = CR.x + (want.x - CR.x) * k, y = CR.y + (want.y - CR.y) * k, f = CR.f + (want.f - CR.f) * k }
 		-- turn the camera left so the car shows to the right of the menu card
-		camera.CFrame = CFrame.lookAt(w2v(CR.x, CR.y, CR.f), w2v(P.x, 0.75, P.f + 0.2)) * CFrame.Angles(0, math.rad(menu.Visible and 22 or 0), 0)
+		camera.CFrame = CFrame.lookAt(w2v(CR.x, CR.y, CR.f), w2v(P.x, 0.75, P.f + 0.2)) * CFrame.Angles(0, math.rad((menu.Visible or (GAR.overlay and GAR.overlay.Visible)) and 22 or 0), 0)
 		camera.FieldOfView = damp(camera.FieldOfView, 42, 3, dt)
 		setCarVisible(car, true); if cockpit.folder then cockpit.folder.Parent = nil end
 		return
@@ -2392,7 +2932,7 @@ end
 showCar = function()
 	if playerCar then playerCar.model:Destroy() end
 	CUR = carDef(SET.car)
-	playerCar = buildCar(CUR.id, PAINTS[SET.paint].c)
+	playerCar = buildCar(CUR.id, PAINTS[SET.paint].c, lookFor(CUR.id))
 end
 local function resetRun()
 	clearTraffic(); clearStunt()
@@ -2412,6 +2952,7 @@ end
 local TUT -- tutorial state, set further down
 startGame = function(tutorial)
 	if tutorial == true or not SET.tutorialDone then TUT.start() else TUT.stop() end
+	CUR = carDef(SET.car)
 	if not unlocked(CUR) then SET.car = "vanta"; CUR = carDef("vanta") end
 	if not playerCar or playerCar.kind ~= CUR.id then showCar() end
 	resetRun()
@@ -2432,8 +2973,10 @@ local function bank()
 	local newBest = sc > (PROG.best[m] or 0)
 	if sc > 0 then
 		PROG.career += sc
+		PROG.wallet += sc * (PROG.passes.double and 2 or 1)
 		if newBest then PROG.best[m] = sc end
 		local ev = RS:FindFirstChild("IWSubmit"); if ev then ev:FireServer(m, sc) end
+		task.delay(2.5, function() if GAR.sync then GAR.sync() end end) -- pick up the server's exact spendable balance
 	end
 	return sc, newBest
 end
@@ -2664,6 +3207,7 @@ task.spawn(function()
 	end
 	if not PAINTS[SET.paint] then SET.paint = 1 end
 	if type(res.career) == "number" then PROG.career = math.max(PROG.career, res.career) end
+	if GAR.apply then GAR.apply(res) end
 	if type(res.best) == "table" then for m, v in pairs(res.best) do if type(v) == "number" then PROG.best[m] = math.max(PROG.best[m] or 0, v) end end end
 	CUR = carDef(SET.car); if not unlocked(CUR) then SET.car = "vanta"; CUR = carDef("vanta") end
 	applyTod(); if state == "menu" then showCar(); refreshMenu() end
@@ -2673,6 +3217,11 @@ end)
 if RunService:IsStudio() then
 	Workspace:GetAttributeChangedSignal("IW_Test"):Connect(function()
 		local cmd = Workspace:GetAttribute("IW_Test")
+		if type(cmd) == "string" and cmd:sub(1, 7) == "garage:" then -- garage:open | give | tab:shop | cat:wheels | sel:whl_mesh | close
+			local a, b = cmd:sub(8):match("^(%w+):?(.*)$")
+			if a == "open" then GAR.open() elseif a == "give" then GAR.give() elseif a == "tab" then GAR.tab(b) elseif a == "cat" then GAR.cat(b) elseif a == "sel" then GAR.sel(b) end
+			return
+		end
 		if type(cmd) == "string" and cmd:sub(1, 4) == "car:" then -- preview any car in the menu, locked or not
 			SET.car = cmd:sub(5); CUR = carDef(SET.car); showCar(); return
 		end
