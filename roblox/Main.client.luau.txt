@@ -165,258 +165,389 @@ local function plate(car, y, z)
 	cp(car, 0.36, 0.04, 0.022, 0, y, z + s * 0.008, Color3.fromRGB(40, 60, 120), Enum.Material.SmoothPlastic)
 end
 
--- generic passenger car body from a spec
-local function body(car, sp, c)
-	local L, W, top = sp.L, sp.W, sp.clear + sp.body
-	local yb = sp.clear + sp.body / 2
-	local zf, zr = -L / 2, L / 2
-	-- lower body with rounded edges, and a darker lower sill
-	rbox(car, W, sp.body, L - 0.24, 0, yb, 0, 0.12, c)
-	rbox(car, W - 0.1, sp.body * 0.72, 0.3, 0, yb - sp.body * 0.12, zf + 0.15, 0.12, c) -- front bumper rounds
-	rbox(car, W - 0.1, sp.body * 0.72, 0.3, 0, yb - sp.body * 0.12, zr - 0.15, 0.12, c) -- rear bumper rounds
-	cp(car, W + 0.01, 0.1, L - 1.6, 0, sp.clear + 0.06, 0, sp.sill or TRIM) -- side skirts
-	-- nose slope and tail slope
-	cw(car, W - 0.06, sp.nose or 0.12, 0.55, 0, top + (sp.nose or 0.12) / 2, zf + 0.42, c, nil, false)
-	-- wheel arches (dark discs on the flanks)
-	for _, sx in ipairs({ -1, 1 }) do
-		for _, z in ipairs({ -sp.wb / 2, sp.wb / 2 }) do
-			cp(car, 0.04, (sp.wr + 0.08) * 2, (sp.wr + 0.08) * 2, sx * (W / 2 + 0.003), sp.wr, z, Color3.fromRGB(10, 10, 11), Enum.Material.SmoothPlastic, { shape = Enum.PartType.Cylinder })
+-- Cars rebuilt from the web version's own data. The browser game draws each car by extruding a side outline
+-- (s forward, y up) across its width; here the very same outlines, wheelbases, light positions, wings, scoops,
+-- fins and stripes are rebuilt from blocks and wedges, so the shapes line up with the web cars.
+-- Web forward distance s becomes -Z in the car's space (the car faces -Z).
+local ACCENT_DEF = Color3.fromRGB(17, 18, 20)
+local RIM_DEF = Color3.fromRGB(169, 175, 181)
+local CALIPER = Color3.fromRGB(179, 18, 26)
+local PLATE_C = Color3.fromRGB(230, 228, 218)
+local GLASS_O = { refl = 0.3 }
+local HEAD_C = Color3.fromRGB(240, 244, 246)
+local TAIL_C = Color3.fromRGB(214, 26, 18)
+
+-- vertical extent of a closed outline at one s
+local function envelope(poly, z)
+	local lo, hi = math.huge, -math.huge
+	local n = #poly
+	for i = 1, n do
+		local a, b = poly[i], poly[i % n + 1]
+		local za, zb = a[1], b[1]
+		if za ~= zb and ((za <= z and z <= zb) or (zb <= z and z <= za)) then
+			local y = a[2] + (b[2] - a[2]) * (z - za) / (zb - za)
+			if y < lo then lo = y end
+			if y > hi then hi = y end
 		end
 	end
-	-- greenhouse: windscreen, side glass, roof, rear glass
-	local cw0 = W - (sp.tumble or 0.22) * 2
-	local zWs = zf + sp.hood -- base of the windscreen
-	local zRoof0 = zWs + sp.ws
-	local zRoof1 = zRoof0 + sp.cabin
-	local yG = top + sp.roof / 2
-	cw(car, cw0, sp.roof, sp.ws, 0, yG, zWs + sp.ws / 2, GLASS, Enum.Material.Glass, false, { refl = 0.25 })
-	cp(car, cw0, sp.roof, sp.cabin, 0, yG, (zRoof0 + zRoof1) / 2, GLASS, Enum.Material.Glass, { refl = 0.25 })
-	if sp.rg > 0.05 then
-		cw(car, cw0, sp.roof, sp.rg, 0, yG, zRoof1 + sp.rg / 2, sp.fastback and c or GLASS, sp.fastback and nil or Enum.Material.Glass, true, { refl = sp.fastback and 0.14 or 0.25 })
-	end
-	rbox(car, cw0 + 0.02, 0.07, sp.cabin + 0.06, 0, top + sp.roof + 0.03, (zRoof0 + zRoof1) / 2, 0.03, sp.roofCol or c)
-	-- pillars and window frame lines
-	for _, sx in ipairs({ -1, 1 }) do
-		cp(car, 0.04, sp.roof, 0.09, sx * (cw0 / 2 + 0.005), yG, zRoof0 + sp.cabin * 0.48, sp.roofCol or c) -- B-pillar
-		cp(car, 0.035, 0.035, sp.cabin + sp.ws * 0.6, sx * (cw0 / 2 + 0.006), top + 0.02, (zRoof0 + zRoof1) / 2 - sp.ws * 0.2, CHROME, Enum.Material.Metal) -- belt line
-		-- door seams and handles
-		if car.hi then cp(car, 0.012, sp.body * 0.8, 0.012, sx * (W / 2 + 0.002), yb, zRoof0 - 0.15, Color3.fromRGB(10, 10, 10))
-		cp(car, 0.012, sp.body * 0.8, 0.012, sx * (W / 2 + 0.002), yb, zRoof0 + sp.cabin * 0.48, Color3.fromRGB(10, 10, 10))
-		cp(car, 0.02, 0.03, 0.14, sx * (W / 2 + 0.008), top - 0.12, zRoof0 + sp.cabin * 0.3, CHROME, Enum.Material.Metal) end
-		-- mirrors
-		cp(car, 0.18, 0.03, 0.05, sx * (cw0 / 2 + 0.12), top + 0.1, zWs + sp.ws * 0.35, BLACK)
-		rbox(car, 0.17, 0.11, 0.14, sx * (cw0 / 2 + 0.25), top + 0.12, zWs + sp.ws * 0.35, 0.04, c)
-	end
-	-- front: grille, intake, splitter, headlights with LED strips
-	local yF = sp.clear + sp.body * 0.62
-	cp(car, W * 0.42, sp.body * 0.3, 0.04, 0, yF - 0.03, zf - 0.005, BLACK)
-	for k = 1, 3 do cp(car, W * 0.4, 0.015, 0.045, 0, yF - 0.1 + k * sp.body * 0.075, zf - 0.008, sp.grilleTrim or CHROME, Enum.Material.Metal) end
-	cp(car, W * 0.7, 0.09, 0.05, 0, sp.clear + 0.1, zf - 0.005, BLACK) -- lower intake
-	if sp.splitter then cp(car, W - 0.1, 0.03, 0.18, 0, sp.clear + 0.02, zf - 0.04, Color3.fromRGB(22, 22, 24), Enum.Material.SmoothPlastic) end
-	for _, sx in ipairs({ -1, 1 }) do
-		cp(car, W * 0.24, 0.12, 0.05, sx * W * 0.33, yF + 0.04, zf + 0.005, Color3.fromRGB(26, 30, 36), Enum.Material.Glass, { refl = 0.4 })
-		cp(car, W * 0.22, 0.03, 0.055, sx * W * 0.33, yF + 0.08, zf, sp.led or LED, Enum.Material.Neon, { shadow = false })
-		cp(car, 0.09, 0.07, 0.055, sx * W * 0.4, yF + 0.02, zf, LED, Enum.Material.Neon, { shadow = false })
-	end
-	-- rear: light bar, diffuser, exhausts, plate
-	local yR = sp.clear + sp.body * 0.72
-	if sp.lightbar ~= false then
-		cp(car, W * 0.86, 0.045, 0.04, 0, yR + 0.04, zr + 0.005, TAIL, Enum.Material.Neon, { shadow = false }).Name = "Tail"
-	end
-	for _, sx in ipairs({ -1, 1 }) do
-		cp(car, W * 0.2, 0.11, 0.05, sx * W * 0.36, yR, zr + 0.004, Color3.fromRGB(90, 8, 6), Enum.Material.Glass, { refl = 0.3 })
-		cp(car, W * 0.17, 0.05, 0.055, sx * W * 0.36, yR, zr + 0.003, TAIL, Enum.Material.Neon, { shadow = false })
-	end
-	cp(car, W * 0.62, 0.1, 0.06, 0, sp.clear + 0.06, zr - 0.01, Color3.fromRGB(20, 20, 22)) -- diffuser
-	for _, sx in ipairs(sp.exhausts or { -1, 1 }) do
-		cp(car, 0.16, 0.09, 0.09, sx * W * 0.3, sp.clear + 0.1, zr + 0.02, CHROME, Enum.Material.Metal, { shape = Enum.PartType.Cylinder, rot = ROT_Z, refl = 0.4 })
-	end
-	plate(car, sp.clear + 0.22, zr)
-	plate(car, sp.clear + 0.16, zf)
-	signals(car, W * 0.44, yF + 0.04, zf + 0.002, yR, zr + 0.004)
-	-- wheels
-	for _, sx in ipairs({ -1, 1 }) do
-		for _, z in ipairs({ -sp.wb / 2, sp.wb / 2 }) do
-			wheel(car, sx * (W / 2 - sp.ww / 2 + 0.02), z, sp.wr, sp.ww, sp.rim or Color3.fromRGB(176, 181, 187), sp.caliper, sp.spokes)
+	return lo, hi
+end
+-- a block up to the lower of two heights with a wedge on top for the slope between them (front = larger s)
+local function topped(car, width, x, y0, yF, yR, zF, zR, color, mat, o)
+	local len, zc = zF - zR, -(zF + zR) / 2
+	local ylow = math.min(yF, yR)
+	if ylow - y0 > 0.01 then cp(car, width, ylow - y0, len, x, (y0 + ylow) / 2, zc, color, mat, o) end
+	local d = math.abs(yF - yR)
+	if d > 0.01 then cw(car, width, d, len, x, ylow + d / 2, zc, color, mat, yF > yR, o) end
+end
+-- fill a closed side outline across a width, a slab at a time, with a small bevel at the top edges
+local function slabs(car, poly, width, color, mat, ox, o)
+	local bev = 0.06
+	local zs = {}
+	for _, p in ipairs(poly) do zs[#zs + 1] = p[1] end
+	table.sort(zs, function(a, b) return a > b end)
+	local u = {}
+	for _, z in ipairs(zs) do if #u == 0 or u[#u] - z > 0.015 then u[#u + 1] = z end end
+	for i = 1, #u - 1 do
+		local za, zb = u[i], u[i + 1]
+		local loA, hiA = envelope(poly, za - 0.0005)
+		local loB, hiB = envelope(poly, zb + 0.0005)
+		if loA ~= math.huge and loB ~= math.huge then
+			local ybot, ylow = math.min(loA, loB), math.min(hiA, hiB)
+			local lowTop = ylow - bev
+			if lowTop - ybot > 0.02 then
+				topped(car, width, ox or 0, ybot, lowTop, lowTop, za, zb, color, mat, o)
+				topped(car, width - 2 * bev, ox or 0, lowTop, hiA, hiB, za, zb, color, mat, o)
+			else
+				topped(car, width - 2 * bev, ox or 0, ybot, hiA, hiB, za, zb, color, mat, o)
+			end
 		end
 	end
-	return top, zWs, zRoof0, zRoof1
+end
+-- dark wheel wells so each wheel sits in an arch like the web cars
+local function archDiscs(car, poly, W, wheels, wr, clear)
+	for _, w in ipairs(wheels) do
+		local _, hi = envelope(poly, w)
+		local r = math.min(wr + 0.12, (hi or 1) - clear - 0.03)
+		if r > 0.15 then cp(car, W + 0.03, 2 * r, 2 * r, 0, clear, -w, BLACK, nil, { shape = Enum.PartType.Cylinder, shadow = false }) end
+	end
+end
+-- helpers for placing web-style parts: every call takes the web's (w, h, l, x, y, s)
+local function mkX(car, accentCol, ledCol)
+	local X = {}
+	local function maker(color, mat, o) return function(w, h, l, x, y, s) return cp(car, w, h, l, x, y, -s, color, mat, o) end end
+	X.paint = maker(car.paint)
+	X.trim = maker(TRIM)
+	X.chrome = maker(CHROME, Enum.Material.Metal, { refl = 0.35 })
+	X.accent = maker(accentCol, nil, { refl = 0.1 })
+	X.led = maker(ledCol, Enum.Material.Neon, { shadow = false })
+	X.glass = maker(GLASS, nil, GLASS_O)
+	local kinds = { paint = car.paint, trim = TRIM, accent = accentCol, glass = GLASS }
+	X.poly = function(poly, width, kind, ox) slabs(car, poly, width, kinds[kind], nil, ox, kind == "glass" and GLASS_O or nil) end
+	X.cyl = function(r, len, x, y, s, color) return cp(car, len, 2 * r, 2 * r, x, y, -s, color or CHROME, Enum.Material.Metal, { shape = Enum.PartType.Cylinder, rot = ROT_Z }) end
+	return X
 end
 
-local SPEC = {
-	sedan = { L = 4.6, W = 1.84, body = 0.56, clear = 0.18, hood = 1.12, ws = 0.72, cabin = 1.25, rg = 0.62, roof = 0.46, wr = 0.33, ww = 0.24, wb = 2.75 },
-	hatch = { L = 4.05, W = 1.76, body = 0.58, clear = 0.17, hood = 0.98, ws = 0.68, cabin = 1.5, rg = 0.28, roof = 0.5, wr = 0.31, ww = 0.22, wb = 2.5 },
-	suv = { L = 4.75, W = 1.94, body = 0.78, clear = 0.24, hood = 1.12, ws = 0.72, cabin = 2.2, rg = 0.3, roof = 0.6, wr = 0.39, ww = 0.27, wb = 2.85, sill = Color3.fromRGB(38, 40, 44), spokes = 6 },
-	pickup = { L = 5.3, W = 2.0, body = 0.78, clear = 0.28, hood = 1.35, ws = 0.68, cabin = 1.12, rg = 0.08, roof = 0.6, wr = 0.4, ww = 0.28, wb = 3.3, spokes = 6 },
-	police = { L = 4.7, W = 1.86, body = 0.58, clear = 0.18, hood = 1.15, ws = 0.72, cabin = 1.3, rg = 0.62, roof = 0.46, wr = 0.34, ww = 0.25, wb = 2.8, rim = Color3.fromRGB(40, 42, 46) },
-	vanta = { L = 4.5, W = 1.9, body = 0.5, clear = 0.12, hood = 1.4, ws = 0.82, cabin = 0.85, rg = 1.05, fastback = true, roof = 0.42, wr = 0.35, ww = 0.27, wb = 2.7, nose = 0.16, splitter = true, caliper = Color3.fromRGB(200, 30, 30), rim = Color3.fromRGB(169, 175, 181), tumble = 0.24 },
-	strada = { L = 4.8, W = 1.96, body = 0.62, clear = 0.14, hood = 1.62, ws = 0.72, cabin = 1.0, rg = 0.62, roof = 0.45, wr = 0.37, ww = 0.31, wb = 2.9, rim = Color3.fromRGB(24, 25, 27), caliper = Color3.fromRGB(240, 120, 20) },
-	kestrel = { L = 4.6, W = 2.02, body = 0.42, clear = 0.1, hood = 1.75, ws = 0.95, cabin = 0.7, rg = 1.15, fastback = true, roof = 0.38, wr = 0.36, ww = 0.31, wb = 2.65, nose = 0.08, splitter = true, rim = Color3.fromRGB(32, 33, 36), caliper = Color3.fromRGB(245, 181, 36), roofCol = BLACK, tumble = 0.3, spokes = 10 },
-	phantom = { L = 4.85, W = 1.98, body = 0.55, clear = 0.13, hood = 1.25, ws = 0.95, cabin = 1.25, rg = 0.95, fastback = true, roof = 0.44, wr = 0.37, ww = 0.28, wb = 2.95, rim = Color3.fromRGB(210, 214, 218), caliper = Color3.fromRGB(127, 240, 255), led = Color3.fromRGB(127, 240, 255), grilleTrim = BLACK, roofCol = GLASS, exhausts = {}, spokes = 7 },
-	apex = { L = 4.95, W = 2.05, body = 0.36, clear = 0.09, hood = 1.7, ws = 0.7, cabin = 0.8, rg = 0.25, roof = 0.36, wr = 0.36, ww = 0.32, wb = 2.95, nose = 0.06, splitter = true, rim = Color3.fromRGB(201, 162, 39), caliper = Color3.fromRGB(255, 43, 214), led = Color3.fromRGB(255, 43, 214), tumble = 0.48, spokes = 10 },
+local WSPEC = {
+	sport = { L = 4.62, W = 1.93, wr = 0.35, wheels = { 1.38, -1.36 }, clear = 0.27, tireW = 0.27,
+		body = { { 2.28, 0.27 }, { 2.35, 0.42 }, { 2.31, 0.58 }, { 2.1, 0.7 }, { 1.4, 0.8 }, { 0.85, 0.86 }, { -1.45, 0.92 }, { -2.1, 0.95 }, { -2.3, 0.87 }, { -2.33, 0.5 }, { -2.28, 0.27 } },
+		shells = { { pts = { { 0.92, 0.84 }, { -0.05, 1.25 }, { -0.85, 1.27 }, { -1.78, 0.93 } }, w = 0.78, mat = "glass" }, { pts = { { 0.06, 1.2 }, { -0.05, 1.28 }, { -0.85, 1.3 }, { -1.08, 1.2 } }, w = 0.8, mat = "paint" } },
+		headY = 0.6, headS = 2.31, tailY = 0.83, tailS = -2.33, mirror = { 0.78, 0.95 } },
+	muscle = { L = 4.95, W = 1.98, wr = 0.37, wheels = { 1.5, -1.45 }, clear = 0.28, tireW = 0.31,
+		body = { { 2.45, 0.28 }, { 2.5, 0.5 }, { 2.49, 0.78 }, { 2.36, 0.87 }, { 1.0, 0.95 }, { 0.75, 0.97 }, { -1.6, 0.99 }, { -2.4, 1.0 }, { -2.48, 0.92 }, { -2.5, 0.5 }, { -2.45, 0.28 } },
+		shells = { { pts = { { 0.8, 0.95 }, { 0.05, 1.29 }, { -0.75, 1.3 }, { -1.65, 0.98 } }, w = 0.78, mat = "glass" }, { pts = { { 0.12, 1.24 }, { 0.04, 1.32 }, { -0.75, 1.34 }, { -0.92, 1.24 } }, w = 0.8, mat = "paint" } },
+		headY = 0.72, headS = 2.49, tailY = 0.86, tailS = -2.5, mirror = { 0.75, 1.02 } },
+	wedge = { L = 4.55, W = 2.04, wr = 0.36, wheels = { 1.4, -1.35 }, clear = 0.22, tireW = 0.33,
+		body = { { 2.3, 0.22 }, { 2.37, 0.31 }, { 2.3, 0.42 }, { 1.4, 0.66 }, { 0.8, 0.78 }, { -1.8, 0.92 }, { -2.25, 0.95 }, { -2.32, 0.75 }, { -2.28, 0.22 } },
+		shells = { { pts = { { 0.95, 0.76 }, { 0.05, 1.11 }, { -0.9, 1.12 }, { -1.6, 0.9 } }, w = 0.72, mat = "glass" }, { pts = { { 0.1, 1.07 }, { 0.02, 1.14 }, { -0.9, 1.15 }, { -1.05, 1.07 } }, w = 0.74, mat = "paint" } },
+		headY = 0.44, headS = 2.27, tailY = 0.84, tailS = -2.31, mirror = { 0.62, 0.95 } },
+	hyper = { L = 4.85, W = 2.08, wr = 0.37, wheels = { 1.5, -1.45 }, clear = 0.2, tireW = 0.34,
+		body = { { 2.4, 0.2 }, { 2.47, 0.3 }, { 2.38, 0.42 }, { 1.6, 0.6 }, { 0.9, 0.7 }, { -1.9, 0.78 }, { -2.38, 0.8 }, { -2.43, 0.6 }, { -2.38, 0.2 } },
+		shells = { { pts = { { 0.9, 0.68 }, { 0.15, 1.05 }, { -0.7, 1.07 }, { -1.4, 0.76 } }, w = 0.55, mat = "glass" }, { pts = { { 0.2, 1.01 }, { 0.12, 1.09 }, { -0.7, 1.11 }, { -0.85, 1.01 } }, w = 0.57, mat = "paint" } },
+		headY = 0.42, headS = 2.38, tailY = 0.7, tailS = -2.43, mirror = { 0.35, 0.86 } },
+	ev = { L = 4.78, W = 1.98, wr = 0.36, wheels = { 1.48, -1.42 }, clear = 0.24, tireW = 0.3,
+		body = { { 2.36, 0.24 }, { 2.42, 0.4 }, { 2.38, 0.56 }, { 2.15, 0.68 }, { 1.3, 0.8 }, { 0.9, 0.84 }, { -1.7, 0.9 }, { -2.3, 0.88 }, { -2.41, 0.7 }, { -2.41, 0.4 }, { -2.34, 0.24 } },
+		shells = { { pts = { { 0.95, 0.83 }, { 0.0, 1.23 }, { -0.9, 1.25 }, { -2.12, 0.9 } }, w = 0.8, mat = "glass" } },
+		headY = 0.6, headS = 2.37, tailY = 0.8, tailS = -2.41, mirror = { 0.85, 0.98 } },
+	sedan = { L = 4.85, W = 1.86, wr = 0.34, wheels = { 1.43, -1.4 }, clear = 0.3, tireW = 0.24,
+		body = { { 2.4, 0.3 }, { 2.46, 0.5 }, { 2.43, 0.68 }, { 2.3, 0.8 }, { 1.7, 0.89 }, { 1.05, 0.95 }, { -1.55, 0.99 }, { -2.25, 1.0 }, { -2.4, 0.9 }, { -2.43, 0.55 }, { -2.38, 0.3 } },
+		shells = { { pts = { { 1.1, 0.93 }, { 0.18, 1.38 }, { -0.95, 1.4 }, { -1.68, 0.97 } }, w = 0.8, mat = "glass" }, { pts = { { 0.3, 1.33 }, { 0.16, 1.42 }, { -0.95, 1.44 }, { -1.12, 1.33 } }, w = 0.82, mat = "paint" } },
+		headY = 0.7, headS = 2.43, tailY = 0.84, tailS = -2.43, mirror = { 0.95, 1.02 } },
+	hatch = { L = 4.2, W = 1.78, wr = 0.32, wheels = { 1.28, -1.25 }, clear = 0.3, tireW = 0.22,
+		body = { { 2.08, 0.3 }, { 2.12, 0.5 }, { 2.08, 0.68 }, { 1.95, 0.78 }, { 1.35, 0.88 }, { 0.85, 0.94 }, { -1.85, 1.0 }, { -2.08, 0.95 }, { -2.1, 0.5 }, { -2.05, 0.3 } },
+		shells = { { pts = { { 0.9, 0.92 }, { 0.0, 1.42 }, { -1.55, 1.44 }, { -2.0, 0.98 } }, w = 0.82, mat = "glass" }, { pts = { { 0.1, 1.36 }, { 0.0, 1.45 }, { -1.55, 1.47 }, { -1.72, 1.36 } }, w = 0.84, mat = "paint" } },
+		headY = 0.7, headS = 2.08, tailY = 0.9, tailS = -2.09, mirror = { 0.8, 1.0 } },
+	suv = { L = 4.78, W = 1.93, wr = 0.38, wheels = { 1.45, -1.4 }, clear = 0.42, tireW = 0.26,
+		body = { { 2.35, 0.42 }, { 2.42, 0.62 }, { 2.4, 0.88 }, { 2.25, 1.02 }, { 1.55, 1.1 }, { 1.15, 1.14 }, { -2.2, 1.18 }, { -2.36, 1.1 }, { -2.38, 0.6 }, { -2.32, 0.42 } },
+		shells = { { pts = { { 1.2, 1.12 }, { 0.45, 1.66 }, { -2.1, 1.68 }, { -2.3, 1.16 } }, w = 0.84, mat = "glass" }, { pts = { { 0.52, 1.6 }, { 0.42, 1.7 }, { -2.1, 1.72 }, { -2.24, 1.6 } }, w = 0.86, mat = "paint" } },
+		headY = 0.92, headS = 2.4, tailY = 1.0, tailS = -2.37, mirror = { 1.05, 1.2 } },
+	pickup = { L = 5.6, W = 2.0, wr = 0.4, wheels = { 1.85, -1.75 }, clear = 0.46, tireW = 0.28,
+		body = { { 2.78, 0.46 }, { 2.83, 0.7 }, { 2.8, 1.0 }, { 2.65, 1.15 }, { 1.45, 1.23 }, { -2.75, 1.23 }, { -2.82, 1.15 }, { -2.83, 0.6 }, { -2.78, 0.46 } },
+		shells = { { pts = { { 1.5, 1.21 }, { 0.75, 1.8 }, { -0.25, 1.82 }, { -0.4, 1.21 } }, w = 0.84, mat = "glass" }, { pts = { { 0.8, 1.74 }, { 0.7, 1.84 }, { -0.25, 1.86 }, { -0.34, 1.74 } }, w = 0.86, mat = "paint" } },
+		headY = 0.98, headS = 2.8, tailY = 1.0, tailS = -2.83, mirror = { 1.35, 1.35 } },
+	van = { L = 5.9, W = 2.0, wr = 0.36, wheels = { 2.05, -1.65 }, clear = 0.4, tireW = 0.24,
+		body = { { 2.95, 0.4 }, { 3.0, 0.62 }, { 2.96, 0.92 }, { 2.75, 1.1 }, { 2.3, 1.22 }, { -2.95, 1.22 }, { -2.98, 0.5 }, { -2.92, 0.4 } },
+		shells = { { pts = { { 2.35, 1.2 }, { 1.55, 2.38 }, { 1.25, 2.38 }, { 1.25, 1.2 } }, w = 0.93, mat = "glass" }, { pts = { { 1.28, 1.2 }, { 1.28, 2.42 }, { 1.12, 2.58 }, { -2.85, 2.58 }, { -2.97, 2.45 }, { -2.97, 1.2 } }, w = 0.99, mat = "paint" } },
+		headY = 0.96, headS = 2.97, tailY = 1.05, tailS = -2.98, mirror = { 2.15, 1.6 } },
+}
+-- the add-ons each web car carries (wings, scoops, stripes, fins, sills ...)
+local EXTRA = {
+	sport = function(X, s) X.paint(1.5, 0.04, 0.22, 0, 1.0, -2.15); X.accent(0.3, 0.012, 1.0, 0, 1.31, -0.4) end,
+	muscle = function(X, s)
+		X.poly({ { 1.95, 0.94 }, { 1.85, 1.1 }, { 1.05, 1.1 }, { 0.95, 0.97 } }, 0.62, "paint") -- hood scoop
+		X.trim(0.5, 0.08, 0.04, 0, 1.03, 1.93)
+		for _, sx in ipairs({ -0.17, 0.17 }) do
+			X.accent(0.2, 0.012, 0.95, sx, 1.355, -0.32); X.accent(0.2, 0.012, 0.75, sx, 1.115, 1.45); X.accent(0.2, 0.012, 0.75, sx, 1.075, -2.0)
+		end
+		X.paint(1.7, 0.05, 0.18, 0, 1.08, -2.36)
+		X.led(s.W - 0.4, 0.05, 0.04, 0, 0.76, -2.53)
+		for _, sx in ipairs({ -1, 1 }) do X.cyl(0.06, 0.5, sx * 0.55, 0.32, -2.5) end
+	end,
+	wedge = function(X, s)
+		local W = s.W
+		X.trim(W * 0.96, 0.05, 0.42, 0, 1.3, -2.05) -- rear wing
+		for _, sx in ipairs({ -0.55, 0.55 }) do X.trim(0.05, 0.36, 0.14, sx, 1.1, -2.0) end
+		for _, sx in ipairs({ -1, 1 }) do
+			X.accent(0.03, 0.3, 0.46, sx * W * 0.48, 1.3, -2.05)
+			X.trim(0.02, 0.26, 0.95, sx * (W / 2 + 0.03), 0.6, -0.75)
+			X.led(0.5, 0.035, 0.05, sx * (W / 2 - 0.36), 0.5, 2.28)
+		end
+		X.trim(W * 0.95, 0.04, 0.32, 0, 0.2, 2.2) -- splitter
+		for i = -2, 2 do X.trim(0.03, 0.18, 0.4, i * 0.3, 0.3, -2.2) end -- diffuser
+		X.led(W - 0.3, 0.05, 0.04, 0, 0.84, -2.36)
+		X.accent(0.36, 0.012, 2.2, 0, 0.83, 1.3)
+	end,
+	hyper = function(X, s)
+		local W = s.W
+		X.poly({ { -0.7, 1.08 }, { -2.2, 1.22 }, { -2.32, 0.8 }, { -1.2, 0.76 } }, 0.05, "accent") -- shark fin
+		X.trim(W, 0.05, 0.48, 0, 1.28, -2.25)
+		for _, sx in ipairs({ -1, 1 }) do
+			X.accent(0.03, 0.42, 0.6, sx * W / 2, 1.18, -2.25)
+			X.poly({ { 2.05, 0.4 }, { 1.95, 0.8 }, { 1.0, 0.82 }, { 0.9, 0.45 } }, 0.44, "paint", sx * (W / 2 - 0.22)) -- front fender pods
+			X.poly({ { -0.9, 0.5 }, { -1.0, 0.88 }, { -2.1, 0.86 }, { -2.2, 0.5 } }, 0.44, "paint", sx * (W / 2 - 0.22)) -- rear haunches
+			X.trim(0.02, 0.3, 0.7, sx * (W / 2 + 0.01), 0.52, -0.3)
+		end
+		X.led(W - 0.5, 0.04, 0.04, 0, 0.43, 2.4); X.led(W - 0.3, 0.06, 0.04, 0, 0.72, -2.46)
+		X.trim(W * 0.95, 0.04, 0.4, 0, 0.18, 2.25)
+	end,
+	ev = function(X, s)
+		local W = s.W
+		X.led(W - 0.25, 0.035, 0.04, 0, 0.64, 2.41); X.led(W - 0.2, 0.05, 0.04, 0, 0.82, -2.45)
+		for _, sx in ipairs({ -1, 1 }) do X.accent(0.012, 0.05, 3.2, sx * (W / 2 + 0.065), 0.42, 0.05) end -- light-blade sills
+		X.trim(W * 0.9, 0.12, 0.2, 0, 0.27, -2.38)
+	end,
+	pickup = function(X, s) X.trim(s.W - 0.26, 0.04, 2.25, 0, 1.31, -1.6); X.trim(s.W - 0.26, 0.05, 0.08, 0, 1.31, -0.42) end,
+	van = function(X, s)
+		for _, sx in ipairs({ -1, 1 }) do X.glass(0.02, 0.62, 0.8, sx * (s.W * 0.495 + 0.01), 1.9, 0.82) end
+		X.trim(0.02, 2.0, 0.02, 0, 1.6, -3.02)
+	end,
+}
+
+local function buildWeb(car, c, name, cfg)
+	cfg = cfg or {}
+	local s = WSPEC[name]
+	local W = s.W
+	local X = mkX(car, cfg.accent or ACCENT_DEF, cfg.led or Color3.fromRGB(255, 42, 26))
+	slabs(car, s.body, W, car.paint)
+	for _, sh in ipairs(s.shells) do
+		if sh.mat == "glass" then slabs(car, sh.pts, W * sh.w, GLASS, nil, nil, GLASS_O) else slabs(car, sh.pts, W * sh.w, car.paint) end
+	end
+	archDiscs(car, s.body, W, s.wheels, s.wr, s.clear)
+	local fS, rS = s.headS + 0.06, s.tailS - 0.06
+	car.sigL, car.sigR = {}, {}
+	for _, sx in ipairs({ -1, 1 }) do
+		cp(car, 0.44, 0.12, 0.1, sx * (W / 2 - 0.33), s.headY, -(fS - 0.03), HEAD_C, Enum.Material.Neon, { shadow = false })
+		cp(car, 0.48, 0.13, 0.1, sx * (W / 2 - 0.3), s.tailY, -(rS + 0.03), TAIL_C, Enum.Material.Neon, { shadow = false })
+		local list = sx < 0 and car.sigL or car.sigR
+		list[#list + 1] = cp(car, 0.12, 0.1, 0.1, sx * (W / 2 - 0.07), s.tailY, -(rS + 0.025), AMBER_OFF, Enum.Material.Neon, { shadow = false })
+		list[#list + 1] = cp(car, 0.12, 0.08, 0.1, sx * (W / 2 - 0.1), s.headY - 0.1, -(fS - 0.035), AMBER_OFF, Enum.Material.Neon, { shadow = false })
+		X.paint(0.1, 0.12, 0.22, sx * (W / 2 + 0.07), s.mirror[2], s.mirror[1])
+	end
+	X.trim(W * 0.42, 0.16, 0.08, 0, s.headY - 0.17, fS - 0.02)
+	X.trim(W * 0.86, 0.13, 0.14, 0, s.clear + 0.07, s.body[1][1] + 0.03)
+	X.trim(W * 0.9, 0.14, 0.14, 0, s.clear + 0.07, s.body[#s.body][1] - 0.03)
+	cp(car, 0.52, 0.12, 0.03, 0, s.tailY - 0.32, -(rS - 0.02), PLATE_C)
+	if EXTRA[name] then EXTRA[name](X, s) end
+	local rim = cfg.rim or RIM_DEF
+	for _, w in ipairs(s.wheels) do
+		for _, sx in ipairs({ -1, 1 }) do
+			wheel(car, sx * (W / 2 - s.tireW / 2 - 0.02), -w, s.wr, s.tireW, rim, CALIPER, 5)
+		end
+	end
+	if cfg.glow then
+		cp(car, W * 1.9, 0.03, s.L * 1.25, 0, 0.02, 0, cfg.glow, Enum.Material.Neon, { shape = Enum.PartType.Ball, tr = 0.82, shadow = false })
+	end
+end
+
+local function cfg(rim, accent, led, glow) return { rim = Color3.fromHex(rim), accent = Color3.fromHex(accent), led = Color3.fromHex(led), glow = glow and Color3.fromHex(glow) or nil } end
+local CFG = {
+	vanta = cfg("a9afb5", "101113", "ff2a1a"),
+	strada = cfg("18191b", "f2f2ee", "ff2a1a", "ff5a1a"),
+	kestrel = cfg("202124", "f5b524", "ffffff", "22d3ff"),
+	phantom = cfg("d2d6da", "7ff0ff", "7ff0ff", "8a4dff"),
+	apex = cfg("c9a227", "ff2bd6", "ff2bd6", "ff2bd6"),
+	or1 = cfg("2a2d31", "111214", "ff2a1a"),
 }
 local BUILD = {}
-for kind, sp in pairs(SPEC) do BUILD[kind] = function(car, c) body(car, sp, c) end end
-
--- hatchback: add a roof spoiler over the near-vertical tailgate
-BUILD.hatch = function(car, c)
-	local sp = SPEC.hatch
-	local top = body(car, sp, c)
-	cp(car, sp.W - 0.5, 0.04, 0.22, 0, top + sp.roof + 0.03, sp.L / 2 - 0.45, c)
-end
-BUILD.suv = function(car, c)
-	local sp = SPEC.suv
-	local top, _, z0, z1 = body(car, sp, c)
-	for _, sx in ipairs({ -1, 1 }) do cp(car, 0.05, 0.05, sp.cabin, sx * (sp.W / 2 - 0.35), top + sp.roof + 0.1, (z0 + z1) / 2, Color3.fromRGB(40, 42, 46), Enum.Material.Metal) end
-	cp(car, 0.5, 0.5, 0.18, 0, sp.clear + sp.body * 0.7, sp.L / 2 + 0.08, Color3.fromRGB(30, 30, 32), nil, { shape = Enum.PartType.Cylinder, rot = ROT_Z }) -- spare wheel
-end
-BUILD.pickup = function(car, c)
-	local sp = SPEC.pickup
-	local top, _, _, z1 = body(car, sp, c)
-	-- open bed behind the cab
-	local bedZ0, bedZ1 = z1 + 0.1, sp.L / 2 - 0.05
-	cp(car, sp.W - 0.16, 0.04, bedZ1 - bedZ0, 0, top - 0.02, (bedZ0 + bedZ1) / 2, Color3.fromRGB(24, 24, 26), Enum.Material.DiamondPlate)
-	for _, sx in ipairs({ -1, 1 }) do cp(car, 0.08, 0.36, bedZ1 - bedZ0, sx * (sp.W / 2 - 0.04), top + 0.16, (bedZ0 + bedZ1) / 2, c) end
-	cp(car, sp.W - 0.08, 0.36, 0.08, 0, top + 0.16, bedZ1, c)
-	cp(car, sp.W - 0.08, 0.36, 0.06, 0, top + 0.16, bedZ0, c)
-	cp(car, sp.W - 0.6, 0.12, 0.3, 0, top + sp.roof + 0.1, z1 - 0.4, Color3.fromRGB(30, 30, 32)) -- roof light bar
-end
+BUILD.vanta = function(car, c) buildWeb(car, c, "sport", CFG.vanta) end
+BUILD.strada = function(car, c) buildWeb(car, c, "muscle", CFG.strada) end
+BUILD.kestrel = function(car, c) buildWeb(car, c, "wedge", CFG.kestrel) end
+BUILD.apex = function(car, c) buildWeb(car, c, "hyper", CFG.apex) end
+BUILD.phantom = function(car, c) buildWeb(car, c, "ev", CFG.phantom) end
+BUILD.sedan = function(car, c) buildWeb(car, c, "sedan") end
+BUILD.hatch = function(car, c) buildWeb(car, c, "hatch") end
+BUILD.suv = function(car, c) buildWeb(car, c, "suv") end
+BUILD.pickup = function(car, c) buildWeb(car, c, "pickup") end
+BUILD.van = function(car, c) buildWeb(car, c, "van") end
 BUILD.police = function(car, c)
-	local sp = SPEC.police
-	local top, _, z0, z1 = body(car, sp, BLACK)
-	-- white doors and roof, light bar, push bar, spotlight
-	for _, sx in ipairs({ -1, 1 }) do cp(car, 0.03, sp.body * 0.78, 2.1, sx * (sp.W / 2 + 0.008), sp.clear + sp.body / 2, 0.15, Color3.fromRGB(241, 241, 238), nil, { refl = 0.12 }) end
-	local rz = (z0 + z1) / 2 - 0.2
-	cp(car, 1.3, 0.07, 0.34, 0, top + sp.roof + 0.1, rz, TRIM)
-	car.red = cp(car, 0.58, 0.12, 0.3, -0.33, top + sp.roof + 0.18, rz, Color3.fromRGB(70, 0, 0), Enum.Material.Neon, { shadow = false })
-	car.blue = cp(car, 0.58, 0.12, 0.3, 0.33, top + sp.roof + 0.18, rz, Color3.fromRGB(0, 10, 70), Enum.Material.Neon, { shadow = false })
-	cp(car, 1.3, 0.34, 0.12, 0, sp.clear + 0.32, -sp.L / 2 - 0.08, TRIM) -- push bar
-	for _, sx in ipairs({ -1, 1 }) do cp(car, 0.08, 0.5, 0.12, sx * 0.45, sp.clear + 0.4, -sp.L / 2 - 0.06, TRIM) end
+	buildWeb(car, c, "sedan")
+	local W = WSPEC.sedan.W
+	local white = Color3.fromRGB(241, 241, 238)
+	for _, sx in ipairs({ -1, 1 }) do cp(car, 0.03, 0.4, 2.3, sx * (W / 2 + 0.055), 0.64, -0.1, white, nil, { refl = 0.12 }) end
+	cp(car, 1.25, 0.06, 0.34, 0, 1.5, 0.4, TRIM)
+	car.red = cp(car, 0.56, 0.11, 0.28, -0.32, 1.58, 0.4, Color3.fromRGB(64, 0, 0), Enum.Material.Neon, { shadow = false })
+	car.blue = cp(car, 0.56, 0.11, 0.28, 0.32, 1.58, 0.4, Color3.fromRGB(0, 10, 64), Enum.Material.Neon, { shadow = false })
+	cp(car, 1.25, 0.32, 0.1, 0, 0.55, -2.55, TRIM) -- push bar
 	local rl = Instance.new("PointLight"); rl.Color = Color3.fromRGB(255, 30, 30); rl.Range = 16; rl.Brightness = 0; rl.Parent = car.red; car.redL = rl
 	local bl = Instance.new("PointLight"); bl.Color = Color3.fromRGB(40, 80, 255); bl.Range = 16; bl.Brightness = 0; bl.Parent = car.blue; car.blueL = bl
 end
-BUILD.vanta = function(car, c)
-	local sp = SPEC.vanta
-	local top = body(car, sp, c)
-	cp(car, sp.W - 0.3, 0.04, 0.32, 0, top + 0.08, sp.L / 2 - 0.25, BLACK) -- lip spoiler
-	for _, sx in ipairs({ -1, 1 }) do cp(car, 0.04, 0.12, 0.6, sx * (sp.W / 2 + 0.01), sp.clear + sp.body * 0.55, -0.55, BLACK) end -- side vents
-end
-BUILD.strada = function(car, c)
-	local sp = SPEC.strada
-	local top = body(car, sp, c)
-	local white = Color3.fromRGB(242, 242, 238)
-	for _, sx in ipairs({ -0.28, 0.28 }) do
-		cp(car, 0.34, 0.012, sp.L - 0.5, sx, top + 0.006, 0, white)
-		cp(car, 0.34, 0.012, sp.cabin + 0.2, sx, top + sp.roof + 0.075, -sp.L / 2 + sp.hood + sp.ws + sp.cabin / 2, white)
-	end
-	rbox(car, 0.7, 0.16, 0.9, 0, top + 0.08, -sp.L / 2 + 0.85, 0.05, BLACK) -- hood scoop
-	cp(car, sp.W - 0.2, 0.06, 0.32, 0, top + 0.05, sp.L / 2 - 0.2, BLACK, nil, { rx = -10 }) -- ducktail
-end
-BUILD.kestrel = function(car, c)
-	local sp = SPEC.kestrel
-	local top = body(car, sp, c)
-	-- big rear wing on two uprights, side intakes, engine louvres
-	local wz = sp.L / 2 - 0.35
-	cp(car, sp.W + 0.06, 0.05, 0.42, 0, top + 0.62, wz, BLACK, nil, { rx = -6 })
-	for _, sx in ipairs({ -1, 1 }) do
-		cp(car, 0.04, 0.58, 0.18, sx * 0.6, top + 0.3, wz, BLACK)
-		cp(car, 0.04, 0.16, 0.48, sx * (sp.W / 2 + 0.03), top + 0.6, wz, BLACK) -- endplates
-		cw(car, 0.06, sp.body * 0.7, 0.9, sx * (sp.W / 2 + 0.01), sp.clear + sp.body * 0.5, 0.3, BLACK, nil, true) -- intakes
-	end
-	for k = 0, 4 do cp(car, sp.W * 0.5, 0.02, 0.06, 0, top + 0.02, sp.L / 2 - 1.15 + k * 0.14, BLACK) end
-	local glow = cp(car, sp.W - 0.2, 0.03, 0.04, 0, sp.clear + 0.05, sp.L / 2 + 0.01, Color3.fromRGB(34, 211, 255), Enum.Material.Neon, { shadow = false })
-	glow.Name = "Glow"
-end
-BUILD.phantom = function(car, c)
-	local sp = SPEC.phantom
-	body(car, sp, c)
-	local blade = Color3.fromRGB(138, 77, 255)
-	for _, sx in ipairs({ -1, 1 }) do cp(car, 0.03, 0.035, sp.L - 1.4, sx * (sp.W / 2 + 0.012), sp.clear + 0.13, 0, blade, Enum.Material.Neon, { shadow = false }) end -- light-blade sills
-	cp(car, sp.W - 0.15, 0.035, 0.05, 0, sp.clear + sp.body * 0.88, -sp.L / 2 + 0.01, Color3.fromRGB(127, 240, 255), Enum.Material.Neon, { shadow = false }) -- front light blade
-end
-BUILD.apex = function(car, c)
-	local sp = SPEC.apex
-	local top = body(car, sp, c)
-	local accent = Color3.fromRGB(255, 43, 214)
-	-- shark fin, full-width wing, front canards
-	local w = Instance.new("WedgePart"); w.Size = Vector3.new(0.05, 0.42, 1.6) * S; w.Color = c; w.Material = Enum.Material.SmoothPlastic
-	w.CFrame = car.root.CFrame * CFrame.new(0, (top + sp.roof + 0.18) * S, (sp.L / 2 - 1.1) * S) * CFrame.Angles(0, math.pi, 0); attach(car, w)
-	cp(car, sp.W + 0.1, 0.05, 0.45, 0, top + 0.5, sp.L / 2 - 0.25, BLACK, nil, { rx = -8 })
-	for _, sx in ipairs({ -1, 1 }) do
-		cp(car, 0.05, 0.5, 0.5, sx * (sp.W / 2 + 0.03), top + 0.3, sp.L / 2 - 0.25, BLACK)
-		cp(car, 0.36, 0.02, 0.2, sx * (sp.W / 2 - 0.1), sp.clear + sp.body * 0.6, -sp.L / 2 + 0.25, BLACK, nil, { rot = CFrame.Angles(0, 0, sx * 0.25) })
-	end
-	cp(car, 0.04, 0.035, sp.L - 0.8, 0, top + sp.roof + 0.02, 0, accent, Enum.Material.Neon, { shadow = false })
-end
-BUILD.van = function(car, c)
-	local L, W = 5.25, 2.0
-	rbox(car, W, 1.9, L - 0.9, 0, 1.3, 0.35, 0.14, c) -- box
-	rbox(car, W - 0.04, 0.95, 1.0, 0, 0.82, -L / 2 + 0.55, 0.14, c) -- nose
-	cw(car, W - 0.1, 0.55, 0.55, 0, 1.55, -L / 2 + 1.05, GLASS, Enum.Material.Glass, false, { refl = 0.25 }) -- windscreen
-	for _, sx in ipairs({ -1, 1 }) do
-		cp(car, 0.02, 0.5, 0.8, sx * (W / 2 + 0.005), 1.6, -1.35, GLASS, Enum.Material.Glass, { refl = 0.25 })
-		cp(car, 0.012, 1.4, 0.012, sx * (W / 2 + 0.006), 1.2, -0.9, Color3.fromRGB(10, 10, 10)) -- sliding door seam
-		cp(car, 0.012, 0.012, 2.6, sx * (W / 2 + 0.006), 1.95, 0.4, Color3.fromRGB(10, 10, 10))
-		cp(car, 0.18, 0.12, 0.14, sx * (W / 2 + 0.12), 1.55, -1.75, BLACK) -- mirrors
-	end
-	cp(car, W + 0.02, 0.22, L, 0, 0.42, 0, TRIM) -- bumper line
-	cp(car, W * 0.5, 0.18, 0.04, 0, 0.8, -L / 2 - 0.005, BLACK)
-	for _, sx in ipairs({ -1, 1 }) do
-		cp(car, 0.36, 0.14, 0.05, sx * 0.68, 1.0, -L / 2 - 0.004, LED, Enum.Material.Neon, { shadow = false })
-		cp(car, 0.14, 0.42, 0.05, sx * 0.86, 1.1, L / 2 + 0.004, TAIL, Enum.Material.Neon, { shadow = false }).Name = "Tail"
-	end
-	cp(car, 0.012, 1.7, 0.012, 0, 1.3, L / 2 + 0.006, Color3.fromRGB(10, 10, 10)) -- rear doors
-	plate(car, 0.5, L / 2); plate(car, 0.45, -L / 2)
-	signals(car, 0.86, 0.85, -L / 2 + 0.002, 0.6, L / 2 + 0.004)
-	for _, sx in ipairs({ -1, 1 }) do for _, z in ipairs({ -1.6, 1.6 }) do wheel(car, sx * 0.86, z, 0.38, 0.26, Color3.fromRGB(150, 155, 160), nil, 6) end end
-end
+
+-- the tractor-trailer, from the web version's semi model
+local LOGOS = { { "NORTHLINE", Color3.fromRGB(23, 58, 107) }, { "CASCADE FREIGHT", Color3.fromRGB(13, 107, 79) }, { "BLUE RIDGE LOGISTICS", Color3.fromRGB(31, 78, 140) }, { "IRONWOOD", Color3.fromRGB(122, 27, 27) } }
 BUILD.semi = function(car, c)
-	-- cab
-	rbox(car, 2.45, 2.0, 2.3, 0, 1.95, -5.95, 0.18, c)
-	rbox(car, 2.4, 1.0, 1.0, 0, 1.15, -7.1, 0.15, c) -- hood
-	cp(car, 2.2, 0.85, 0.08, 0, 2.5, -7.12, GLASS, Enum.Material.Glass, { refl = 0.25 })
-	cp(car, 1.4, 0.75, 0.05, 0, 1.25, -7.62, CHROME, Enum.Material.DiamondPlate, { refl = 0.3 }) -- grille
-	rbox(car, 2.3, 0.6, 1.4, 0, 3.15, -5.6, 0.2, c) -- roof fairing
+	local W, wr = 2.5, 0.52
+	local X = mkX(car, ACCENT_DEF, TAIL_C)
+	local cab = { { 9.45, 0.6 }, { 9.55, 0.95 }, { 9.5, 1.6 }, { 9.25, 1.82 }, { 7.9, 1.98 }, { 4.9, 1.98 }, { 4.9, 0.6 } }
+	slabs(car, cab, W, car.paint)
+	X.poly({ { 7.95, 1.96 }, { 7.45, 3.0 }, { 6.95, 3.0 }, { 6.95, 1.96 } }, W * 0.9, "glass")
+	X.poly({ { 6.98, 1.96 }, { 6.98, 3.02 }, { 4.9, 3.05 }, { 4.9, 1.96 } }, W * 0.98, "paint")
+	X.poly({ { 7.4, 2.98 }, { 6.6, 3.72 }, { 4.95, 3.82 }, { 4.95, 2.98 } }, W * 0.95, "paint")
+	archDiscs(car, cab, W, { 8.3 }, wr, 0.6)
+	car.sigL, car.sigR = {}, {}
 	for _, sx in ipairs({ -1, 1 }) do
-		cp(car, 0.18, 1.9, 0.18, sx * 1.15, 3.0, -4.75, CHROME, Enum.Material.Metal, { shape = Enum.PartType.Cylinder, rot = CFrame.Angles(0, 0, math.pi / 2), refl = 0.4 }) -- stacks
-		cp(car, 0.08, 0.5, 0.35, sx * 1.35, 2.4, -6.9, CHROME, Enum.Material.Metal) -- mirrors
-		cp(car, 0.5, 0.5, 1.2, sx * 1.0, 0.7, -4.9, CHROME, Enum.Material.Metal, { shape = Enum.PartType.Cylinder, rot = ROT_Z, refl = 0.35 }) -- tanks
-		cp(car, 0.4, 0.14, 0.06, sx * 0.85, 1.05, -7.63, LED, Enum.Material.Neon, { shadow = false })
+		X.glass(0.02, 0.66, 0.85, sx * (W * 0.49 + 0.012), 2.52, 6.45)
+		cp(car, 0.42, 0.2, 0.08, sx * 0.92, 1.12, -9.55, HEAD_C, Enum.Material.Neon, { shadow = false })
+		X.cyl(0.3, 1.3, sx * 1.0, 0.85, 4.1) -- fuel tanks
+		cp(car, 2.6, 0.16, 0.16, sx * 1.08, 3.0, -4.85, CHROME, Enum.Material.Metal, { shape = Enum.PartType.Cylinder, rot = CFrame.Angles(0, 0, math.pi / 2) }) -- exhaust stacks
+		X.paint(0.1, 0.3, 0.12, sx * (W / 2 + 0.25), 2.55, 7.3)
+		cp(car, 0.3, 0.16, 0.06, sx * 1.0, 1.42, 9.53, TAIL_C, Enum.Material.Neon, { shadow = false })
+		local list = sx < 0 and car.sigL or car.sigR
+		list[#list + 1] = cp(car, 0.16, 0.16, 0.06, sx * 1.22, 1.42, 9.53, AMBER_OFF, Enum.Material.Neon, { shadow = false })
+		list[#list + 1] = cp(car, 0.2, 0.12, 0.08, sx * 1.22, 1.12, -9.53, AMBER_OFF, Enum.Material.Neon, { shadow = false })
+		X.trim(0.5, 0.06, 1.3, sx * 1.0, 1.17, 2.95)
 	end
-	-- trailer with ribs
-	local white = Color3.fromRGB(226, 229, 233)
-	rbox(car, 2.55, 3.0, 11.6, 0, 2.62, 2.1, 0.08, white)
-	for z = -3.4, 7.6, 1.1 do for _, sx in ipairs({ -1, 1 }) do cp(car, 0.03, 2.8, 0.06, sx * 1.285, 2.62, z, Color3.fromRGB(196, 200, 205), Enum.Material.Metal) end end
-	cp(car, 2.1, 0.5, 14.5, 0, 0.75, -0.4, BLACK) -- chassis
+	X.chrome(1.3, 0.95, 0.06, 0, 1.2, 9.56)
+	X.chrome(2.5, 0.3, 0.26, 0, 0.62, 9.52)
+	X.trim(1.0, 0.3, 6.9, 0, 0.88, 1.45)
+	-- the trailer
+	cp(car, 2.6, 2.75, 13.9, 0, 2.68, 2.55, Color3.fromRGB(242, 242, 239), nil, { refl = 0.05 })
+	X.trim(2.6, 0.16, 13.9, 0, 1.24, -2.55)
+	X.trim(0.05, 2.6, 0.03, 0, 2.68, -9.52); X.trim(2.4, 0.12, 0.1, 0, 0.62, -9.3)
+	X.trim(0.12, 0.6, 0.1, -0.9, 0.9, -9.3); X.trim(0.12, 0.6, 0.1, 0.9, 0.9, -9.3)
+	X.trim(0.12, 1.0, 0.12, -0.9, 0.7, 2.0); X.trim(0.12, 1.0, 0.12, 0.9, 0.7, 2.0)
+	cp(car, 0.5, 0.15, 0.03, 0, 0.9, 9.54, PLATE_C)
+	-- company name on both sides
+	local logo = LOGOS[math.random(1, #LOGOS)]
 	for _, sx in ipairs({ -1, 1 }) do
-		cp(car, 0.14, 0.5, 0.05, sx * 1.0, 1.4, 7.92, TAIL, Enum.Material.Neon, { shadow = false }).Name = "Tail"
-		cp(car, 0.02, 0.22, 9, sx * 1.29, 1.1, 2.1, Color3.fromRGB(210, 40, 30), Enum.Material.SmoothPlastic) -- reflective tape
+		local p = cp(car, 0.02, 2.5, 13.4, sx * 1.305, 2.7, 2.55, Color3.fromRGB(244, 244, 241))
+		local g = Instance.new("SurfaceGui"); g.Face = sx > 0 and Enum.NormalId.Right or Enum.NormalId.Left
+		g.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize; g.CanvasSize = Vector2.new(1340, 250); g.Parent = p
+		local t = Instance.new("TextLabel"); t.Size = UDim2.fromScale(0.9, 0.55); t.Position = UDim2.fromScale(0.04, 0.12)
+		t.BackgroundTransparency = 1; t.Text = logo[1]; t.TextColor3 = logo[2]; t.Font = Enum.Font.GothamBlack; t.TextScaled = true
+		t.TextXAlignment = sx > 0 and Enum.TextXAlignment.Left or Enum.TextXAlignment.Right; t.Parent = g
+		local bar = Instance.new("Frame"); bar.Size = UDim2.fromScale(1, 0.08); bar.Position = UDim2.fromScale(0, 0.8); bar.BackgroundColor3 = logo[2]; bar.BorderSizePixel = 0; bar.Parent = g
 	end
-	cp(car, 2.5, 0.25, 0.1, 0, 0.9, 7.85, Color3.fromRGB(200, 40, 30)) -- underride bar
-	signals(car, 1.05, 1.25, -7.63, 1.4, 7.93)
-	for _, z in ipairs({ -6.0, -4.4, -3.2, 4.6, 6.0 }) do for _, sx in ipairs({ -1, 1 }) do wheel(car, sx * 1.02, z, 0.5, 0.34, Color3.fromRGB(190, 194, 198), nil, 8) end end
+	for _, ax in ipairs({ { 8.3, 0.3 }, { 3.6, 0.55 }, { 2.3, 0.55 }, { -6.4, 0.55 }, { -7.7, 0.55 } }) do
+		for _, sx in ipairs({ -1, 1 }) do wheel(car, sx * (W / 2 - ax[2] / 2 - 0.02), -ax[1], wr, ax[2], RIM_DEF, nil, 5) end
+	end
 end
+
+-- the OR-1 hypercar: built from the same station table the web model sculpts its body from
+local OR1_KEY = { -- s, half-width, floor, widest-point height, fender-crown height, crown position, centreline height
+	{ 2.33, 0.74, 0.130, 0.215, 0.300, 0.74, 0.290 }, { 2.26, 0.85, 0.118, 0.235, 0.355, 0.76, 0.325 }, { 2.10, 0.925, 0.112, 0.270, 0.450, 0.79, 0.380 }, { 1.85, 0.985, 0.110, 0.335, 0.610, 0.80, 0.455 },
+	{ 1.36, 1.015, 0.110, 0.430, 0.780, 0.80, 0.575 }, { 0.92, 1.010, 0.110, 0.450, 0.760, 0.80, 0.660 }, { 0.45, 0.990, 0.110, 0.455, 0.705, 0.81, 0.715 }, { -0.30, 0.985, 0.110, 0.465, 0.700, 0.82, 0.750 },
+	{ -0.90, 1.005, 0.110, 0.495, 0.790, 0.82, 0.815 }, { -1.44, 1.020, 0.120, 0.530, 0.905, 0.80, 0.850 }, { -1.95, 0.995, 0.180, 0.565, 0.895, 0.80, 0.845 }, { -2.20, 0.955, 0.255, 0.590, 0.855, 0.80, 0.822 },
+	{ -2.30, 0.925, 0.300, 0.600, 0.822, 0.80, 0.800 },
+}
+local OR1_CAN = { { 1.02, 0.46, 0.56 }, { 0.80, 0.585, 0.745 }, { 0.50, 0.675, 0.925 }, { 0.15, 0.725, 1.085 }, { -0.25, 0.735, 1.165 }, { -0.70, 0.705, 1.150 }, { -1.10, 0.620, 1.060 }, { -1.50, 0.500, 0.955 }, { -1.90, 0.360, 0.850 } }
 BUILD.or1 = function(car, c)
-	-- low hypercar: carbon tub, teardrop canopy, wing, light blades
-	local sp = { L = 4.66, W = 2.04, body = 0.36, clear = 0.1, hood = 1.55, ws = 0.75, cabin = 0.7, rg = 1.0, fastback = true, roof = 0.36,
-		wr = 0.36, ww = 0.32, wb = 2.8, nose = 0.08, splitter = true, rim = Color3.fromRGB(42, 45, 49), caliper = Color3.fromRGB(220, 30, 26), tumble = 0.42, roofCol = BLACK, spokes = 10, exhausts = { 0 } }
-	local top = body(car, sp, c)
-	local carbon = Color3.fromRGB(24, 26, 29)
-	cp(car, sp.W + 0.08, 0.05, 0.5, 0, top + 0.48, sp.L / 2 - 0.25, carbon, nil, { rx = -7 })
-	for _, sx in ipairs({ -1, 1 }) do
-		cp(car, 0.04, 0.5, 0.12, sx * 0.5, top + 0.25, sp.L / 2 - 0.25, carbon)
-		cw(car, 0.08, sp.body * 0.8, 1.1, sx * (sp.W / 2 + 0.01), sp.clear + sp.body * 0.5, 0.4, carbon, nil, true)
-		cp(car, 0.5, 0.025, 0.04, sx * 0.62, sp.clear + sp.body * 0.86, -sp.L / 2 + 0.01, LED, Enum.Material.Neon, { shadow = false })
+	local W, wr, wheels = 2.04, 0.36, { 1.36, -1.44 }
+	local cf = CFG.or1
+	local X = mkX(car, cf.accent, cf.led)
+	local paint = car.paint
+	for i = 1, #OR1_KEY - 1 do
+		local a, b = OR1_KEY[i], OR1_KEY[i + 1]
+		local za, zb = a[1], b[1]
+		local function v(k) return a[k], b[k] end
+		local hw = (a[2] + b[2]) / 2
+		local kx = (a[6] + b[6]) / 2
+		local ybF, ybR = v(3)
+		local ymF, ymR = v(4)
+		local yfF, yfR = v(5)
+		local ycF, ycR = v(7)
+		local floorY = math.min(ybF, ybR)
+		topped(car, hw * 2 * 0.99, 0, floorY, ymF, ymR, za, zb, paint)
+		local shF = math.max(ymF + 0.02, math.min(ymF + (yfF - ymF) * 0.55, ycF))
+		local shR = math.max(ymR + 0.02, math.min(ymR + (yfR - ymR) * 0.55, ycR))
+		topped(car, hw * 2 * (kx + (1 - kx) * 0.5), 0, math.min(ymF, ymR), shF, shR, za, zb, paint)
+		local sBase = math.min(shF, shR)
+		if math.min(ycF, ycR) > sBase then topped(car, hw * 2 * kx * 0.82, 0, sBase, ycF, ycR, za, zb, paint) end
+		if math.max(yfF, yfR) > sBase + 0.02 then
+			for _, sx in ipairs({ -1, 1 }) do topped(car, 0.34, sx * hw * kx * 0.9, sBase, math.max(yfF, sBase), math.max(yfR, sBase), za, zb, paint) end
+		end
 	end
-	cp(car, 0.42, 0.03, sp.L - 0.6, -0.5, top + 0.005, 0, Color3.fromRGB(190, 20, 20))
-	cp(car, 0.42, 0.03, sp.L - 0.6, 0.5, top + 0.005, 0, Color3.fromRGB(190, 20, 20))
+	-- glass canopy with a painted roof and cant rails
+	for i = 1, #OR1_CAN - 1 do
+		local a, b = OR1_CAN[i], OR1_CAN[i + 1]
+		local sc = (a[1] + b[1]) / 2
+		local hw = (a[2] + b[2]) / 2 * 0.86
+		if sc > -0.92 then
+			topped(car, hw * 2, 0, 0.5, a[3], b[3], a[1], b[1], GLASS, nil, GLASS_O)
+			if sc < -0.06 then topped(car, hw * 0.9, 0, math.min(a[3], b[3]), a[3] + 0.02, b[3] + 0.02, a[1], b[1], paint) end
+		else
+			topped(car, hw * 2, 0, 0.5, a[3], b[3], a[1], b[1], paint)
+			if sc > -1.72 then topped(car, hw * 0.8, 0, math.min(a[3], b[3]), a[3] + 0.015, b[3] + 0.015, a[1], b[1], GLASS, nil, GLASS_O) end
+		end
+	end
+	for _, w in ipairs(wheels) do
+		cp(car, W + 0.03, 0.82, 0.82, 0, w == wheels[1] and 0.355 or 0.36, -w, BLACK, nil, { shape = Enum.PartType.Cylinder, shadow = false })
+	end
+	-- aero: splitter, canards, mirrors, rear wing, diffuser
+	X.accent(1.96, 0.025, 0.55, 0, 0.08, 2.135)
+	slabs(car, { { -1.92, 1.065 }, { -2.0, 1.092 }, { -2.12, 1.105 }, { -2.24, 1.1 }, { -2.33, 1.085 }, { -2.24, 1.068 }, { -2.1, 1.058 }, { -1.98, 1.056 } }, 1.78, cf.accent, nil, nil, { refl = 0.1 })
+	X.led(0.5, 0.012, 0.008, 0, 1.082, -2.334)
+	for _, sx in ipairs({ -1, 1 }) do
+		X.accent(0.05, 0.02, 1.96, sx * 1.0, 0.1, -0.03)
+		slabs(car, { { -1.72, 0.84 }, { -2.02, 0.83 }, { -2.2, 1.05 }, { -2.06, 1.07 } }, 0.04, cf.accent, nil, sx * 0.3225)
+		X.accent(0.015, 0.2, 0.46, sx * 0.8975, 1.05, -2.1)
+		X.paint(0.12, 0.07, 0.22, sx * 1.0, 0.84, 0.36)
+		X.accent(0.022, 0.12, 0.1, sx * 0.8, 0.31, 2.1)
+	end
+	X.poly({ { -1.7, 0.105 }, { -2.36, 0.285 }, { -2.36, 0.305 }, { -1.7, 0.125 } }, 1.8, "accent")
+	-- lights
+	car.sigL, car.sigR = {}, {}
+	for _, sx in ipairs({ -1, 1 }) do
+		cp(car, 0.5, 0.05, 0.28, sx * 0.66, 0.34, -1.98, HEAD_C, Enum.Material.Neon, { shadow = false })
+		cp(car, 0.42, 0.016, 0.06, sx * 0.72, 0.36, -2.02, HEAD_C, Enum.Material.Neon, { shadow = false })
+		local list = sx < 0 and car.sigL or car.sigR
+		list[#list + 1] = cp(car, 0.12, 0.06, 0.05, sx * 0.76, 0.3, -1.7, AMBER_OFF, Enum.Material.Neon, { shadow = false })
+		list[#list + 1] = cp(car, 0.1, 0.02, 0.02, sx * 0.62, 0.6, 2.3, AMBER_OFF, Enum.Material.Neon, { shadow = false })
+		cp(car, 0.022, 0.13, 0.02, sx * 0.79, 0.66, 2.31, TAIL_C, Enum.Material.Neon, { shadow = false })
+		cp(car, 0.16, 0.022, 0.02, sx * 0.71, 0.6, 2.31, TAIL_C, Enum.Material.Neon, { shadow = false })
+	end
+	cp(car, 1.56, 0.022, 0.02, 0, 0.715, 2.31, TAIL_C, Enum.Material.Neon, { shadow = false })
+	for k = 0, 5 do cp(car, 1.5, 0.007, 0.012, 0, 0.45 + k * 0.036, 2.306, ACCENT_DEF) end -- mesh bars
+	cp(car, 0.31, 0.155, 0.012, 0, 0.375, 2.32, PLATE_C)
+	for _, w in ipairs(wheels) do
+		for _, sx in ipairs({ -1, 1 }) do wheel(car, sx * (W / 2 - 0.31 / 2 - 0.02), -w, wr, 0.31, cf.rim, CALIPER, 5) end
+	end
 end
 
 CAR_DIM = {
-	sedan = { L = 4.6, W = 1.84 }, hatch = { L = 4.05, W = 1.76 }, suv = { L = 4.75, W = 1.94 }, pickup = { L = 5.3, W = 2.0 },
-	van = { L = 5.25, W = 2.0 }, semi = { L = 14.5, W = 2.5 }, police = { L = 4.7, W = 1.86 },
-	vanta = { L = 4.5, W = 1.9 }, strada = { L = 4.8, W = 1.96 }, kestrel = { L = 4.6, W = 2.02 }, phantom = { L = 4.85, W = 1.98 },
-	apex = { L = 4.95, W = 2.05 }, or1 = { L = 4.66, W = 2.04 },
+	sedan = { L = 4.85, W = 1.86 }, hatch = { L = 4.2, W = 1.78 }, suv = { L = 4.78, W = 1.93 }, pickup = { L = 5.6, W = 2.0 },
+	van = { L = 5.9, W = 2.0 }, semi = { L = 19.1, W = 2.6 }, police = { L = 4.85, W = 1.86 },
+	vanta = { L = 4.62, W = 1.93 }, strada = { L = 4.95, W = 1.98 }, kestrel = { L = 4.55, W = 2.04 }, phantom = { L = 4.78, W = 1.98 },
+	apex = { L = 4.85, W = 2.08 }, or1 = { L = 4.66, W = 2.04 },
 }
 local PLAYER_KINDS = { vanta = true, strada = true, or1 = true, kestrel = true, phantom = true, apex = true }
 function buildCar(kind, color)
