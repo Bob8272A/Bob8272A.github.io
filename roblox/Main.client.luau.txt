@@ -2593,17 +2593,39 @@ local function __build_garage()
 	local rvSub = text(rvCard, { Size = UDim2.new(1, -40, 0, 34), Position = UDim2.fromOffset(20, 140), Text = "", TextSize = 12, Font = F_MONO, TextColor3 = C_SOFT, TextWrapped = true, TextXAlignment = CEN })
 	local rvBtns = frame(rvCard, { Size = UDim2.new(1, -40, 0, 44), Position = UDim2.new(0, 20, 1, -62), Visible = false })
 	local opening, lastCrate = false, nil
+	local inbox = nil -- while a Robux crate purchase is open: filled in by the server's IWCrate event
+	local PROD_PRICE = {}
+	task.spawn(function() -- live Robux price of each crate's developer product
+		for _, cr in ipairs(CATALOG.CRATES) do
+			local id = cr.product and CATALOG.PRODUCT_IDS[cr.product]
+			if id and id ~= 0 then
+				local ok, info = pcall(function() return MarketplaceService:GetProductInfo(id, Enum.InfoType.Product) end)
+				if ok and type(info) == "table" and info.PriceInRobux then PROD_PRICE[cr.id] = info.PriceInRobux end
+			end
+		end
+	end)
+	local function rpOf(cr) return PROD_PRICE[cr.id] or cr.rp end
 	local function openCrate(cr)
 		if opening then return end
-		if PROG.wallet < cr.price then popup("NOT ENOUGH POINTS", ("Earn %s more by driving"):format(commas(cr.price - PROG.wallet))); return end
+		if not cr.rp and PROG.wallet < cr.price then popup("NOT ENOUGH POINTS", ("Earn %s more by driving"):format(commas(cr.price - PROG.wallet))); return end
 		opening = true; lastCrate = cr
 		reveal.Visible = true; rvBtns.Visible = false; rvStroke.Color = C_AMBER
-		rvTitle.Text = string.upper(cr.name) .. "  ·  " .. commas(cr.price) .. " PTS"; rvTier.Text = ""; rvSub.Text = "Opening..."
+		rvTitle.Text = string.upper(cr.name) .. "  ·  " .. (cr.rp and ("R$ " .. rpOf(cr)) or (commas(cr.price) .. " PTS")); rvTier.Text = ""; rvSub.Text = cr.rp and "Confirm the purchase..." or "Opening..."
 		task.spawn(function()
 			local done, ok, msg, prize = false, false, nil, nil
-			task.spawn(function() local a, b, _, d = call("crate", cr.id); ok, msg, prize = a, b, d; done = true end)
+			task.spawn(function()
+				if not cr.rp then local a, b, _, d = call("crate", cr.id); ok, msg, prize = a, b, d; done = true; return end
+				inbox = { waiting = true }
+				local a, b, _, d = call("crateRobux", cr.id)
+				if a and d == nil then -- the Roblox purchase prompt is open: wait for the server to hand the prize over
+					local t0 = os.clock()
+					while inbox and inbox.waiting and os.clock() - t0 < 300 do task.wait(0.2) end
+					if inbox and inbox.prize then ok, msg, prize = true, "", inbox.prize else ok, msg = false, "Purchase cancelled" end
+				else ok, msg, prize = a, b, d end
+				inbox = nil; done = true
+			end)
 			local i = 0
-			while (not done or i < 26) and i < 400 do -- the reel: flick through the possible prizes, slowing down
+			while (not done or i < 26) and i < 1600 do -- the reel: flick through the possible prizes, slowing down
 				i += 1
 				local d = cr.drops[math.random(1, #cr.drops)]
 				rvName.Text = d.label; rvName.TextColor3 = CATALOG.TIERS[d.tier].c
@@ -2624,18 +2646,26 @@ local function __build_garage()
 			CUR = carDef(SET.car); renderAll()
 		end)
 	end
+	task.spawn(function()
+		local ev = RS:WaitForChild("IWCrate", 15)
+		if ev then ev.OnClientEvent:Connect(function(prize, st)
+			applyState(st); CUR = carDef(SET.car)
+			if inbox then inbox.prize = prize; inbox.waiting = false
+			elseif prize then popup("CRATE OPENED", tostring(prize.name or "A prize")); showCar(); renderAll() end -- the reveal had already timed out
+		end) end
+	end)
 	local againB = btn(rvBtns, { Size = UDim2.new(0.5, -5, 1, 0), Text = "OPEN ANOTHER", TextSize = 14, BackgroundTransparency = 0, BackgroundColor3 = C_AMBER, TextColor3 = C_INK }, function() if lastCrate then openCrate(lastCrate) end end)
 	corner(againB, 8)
 	local doneB = btn(rvBtns, { Size = UDim2.new(0.5, -5, 1, 0), Position = UDim2.new(0.5, 5, 0, 0), Text = "DONE", TextSize = 14, BackgroundTransparency = 1 }, function() reveal.Visible = false end)
 	corner(doneB, 8); stroke(doneB, C_PAPER, 2, 0.5)
 	local function renderCrates()
-		text(content, { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Text = "Crates cost points, never Robux. The prize is picked by the server, and these are the exact chances.", TextWrapped = true, TextSize = 12, Font = F_MONO, TextColor3 = C_SOFT })
+		text(content, { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Text = "Street, Pro and Legend crates cost points. Gold, Diamond and Mythic crates cost Robux. The server picks every prize, and these are the exact chances.", TextWrapped = true, TextSize = 12, Font = F_MONO, TextColor3 = C_SOFT })
 		for _, cr in ipairs(CATALOG.CRATES) do
-			local can = PROG.wallet >= cr.price
+			local can = cr.rp and true or PROG.wallet >= cr.price
 			local row = frame(content, { Size = UDim2.new(1, 0, 0, 70 + #cr.drops * 17), BackgroundTransparency = 0.72, BackgroundColor3 = Color3.new(0, 0, 0) }); corner(row, 9)
 			text(row, { Size = UDim2.new(1, -140, 0, 20), Position = UDim2.fromOffset(10, 8), Text = cr.name, TextSize = 15, Font = F_BLACK })
 			text(row, { Size = UDim2.new(1, -140, 0, 28), Position = UDim2.fromOffset(10, 29), Text = cr.desc, TextSize = 11, Font = F_MONO, TextColor3 = C_SOFT, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top })
-			pill(row, { Size = UDim2.fromOffset(118, 34), Position = UDim2.new(1, -126, 0, 10), Text = "OPEN · " .. kfmt(cr.price), TextSize = 12, BackgroundTransparency = can and 0 or 0.85,
+			pill(row, { Size = UDim2.fromOffset(118, 34), Position = UDim2.new(1, -126, 0, 10), Text = cr.rp and ("R$ " .. rpOf(cr)) or ("OPEN · " .. kfmt(cr.price)), TextSize = 12, BackgroundTransparency = can and 0 or 0.85,
 				BackgroundColor3 = can and C_AMBER or Color3.new(1, 1, 1), TextColor3 = can and C_INK or C_SOFT }, function() openCrate(cr) end)
 			for i, d in ipairs(cr.drops) do
 				local y = 62 + (i - 1) * 17
@@ -2643,7 +2673,7 @@ local function __build_garage()
 				text(row, { Size = UDim2.new(1, -62, 0, 15), Position = UDim2.fromOffset(52, y), Text = d.label, TextSize = 11, Font = F_MONO, TextColor3 = C_SOFT, TextTruncate = Enum.TextTruncate.AtEnd })
 			end
 		end
-		text(content, { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Text = "Already own everything a prize could be? You get points back instead: 1,800 (Street), 7,500 (Pro) or 30,000 (Legend).", TextWrapped = true, TextSize = 11, Font = F_MONO, TextColor3 = C_SOFT })
+		text(content, { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Text = "Already own everything a prize could be? You get points back instead: 1,800 (Street), 7,500 (Pro), 30,000 (Legend), 20,000 (Gold), 60,000 (Diamond) or 150,000 (Mythic). Robux crates are paid random items: prizes are random, and every chance is listed above before you buy.", TextWrapped = true, TextSize = 11, Font = F_MONO, TextColor3 = C_SOFT })
 	end
 
 	renderContent = function()

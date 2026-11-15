@@ -23,6 +23,13 @@ C.PASS_IDS = {
 	map_neon = 0, -- Neon City (map)
 	map_lunar = 0, -- Lunar Loop (map)
 }
+-- Robux crates are DEVELOPER PRODUCTS (Creator Hub > Monetization > Developer Products), not game passes, because they can be bought again and again.
+-- Paste each product id here. 0 = not on sale: Studio opens the crate for free so you can test it, a live server says "not on sale yet".
+C.PRODUCT_IDS = {
+	rcrate_gold = 0, -- Gold crate
+	rcrate_diamond = 0, -- Diamond crate
+	rcrate_mythic = 0, -- Mythic crate
+}
 -- shop listing; rp is only a fallback label, the real price is whatever you set in Creator Hub (it is read live when the id is set)
 C.PASSES = {
 	{ key = "paint_shift", name = "Colour-shift paint", rp = 149, kind = "look", desc = "Your paint slowly cycles through the whole colour wheel. Works on every car." },
@@ -151,7 +158,7 @@ function C.clean(state, eq)
 	return out
 end
 ---------------------------------------------------------------- crates
--- Crates are bought with spendable POINTS only (never Robux) and the server picks the prize. Every chance is listed here and shown to the
+-- The first three crates are bought with spendable POINTS; the Gold, Diamond and Mythic crates (added below) are bought with Robux. Either way the server picks the prize. Every chance is listed here and shown to the
 -- player before they open one. w = chance in percent (each crate adds up to 100).
 -- kinds: points (min..max), part (a points-shop part you do not own), look (a Robux look item you do not own), map, car (a Robux-only car).
 -- If you already own everything a prize could be, you get `dupe` points back instead.
@@ -184,6 +191,30 @@ C.CRATES = {
 		{ w = 8, tier = "legendary", kind = "car", label = "A Robux-only car" },
 	} },
 }
+-- ROBUX CRATES. Paid random items: Roblox requires the exact odds to be shown before purchase (the garage does that) and they must stay
+-- locked for players whose PolicyService says ArePaidRandomItemsRestricted (the server checks that). Remember to tick "paid random items"
+-- in the experience's Maturity & Compliance questionnaire. rp is a fallback label; the real price is the developer product's price.
+table.insert(C.CRATES, { id = "gold", name = "Gold crate", rp = 99, product = "rcrate_gold", dupe = 20000, desc = "Robux crate. Shop parts, looks, maps, and a small chance of a Robux-only car.", drops = {
+	{ w = 30, tier = "uncommon", kind = "points", min = 8000, max = 20000, label = "8,000 to 20,000 points" },
+	{ w = 25, tier = "uncommon", kind = "part", max = 20000, label = "Any shop part, including turbos and carbon brakes" },
+	{ w = 25, tier = "rare", kind = "look", label = "A Robux look item (paint, wheels, liveries, neon)" },
+	{ w = 12, tier = "epic", kind = "map", label = "A map" },
+	{ w = 6, tier = "epic", kind = "points", min = 40000, max = 70000, label = "40,000 to 70,000 points" },
+	{ w = 2, tier = "legendary", kind = "car", label = "A Robux-only car" },
+} })
+table.insert(C.CRATES, { id = "diamond", name = "Diamond crate", rp = 299, product = "rcrate_diamond", dupe = 60000, desc = "Robux crate. Every prize is rare or better.", drops = {
+	{ w = 30, tier = "rare", kind = "look", label = "A Robux look item (paint, wheels, liveries, neon)" },
+	{ w = 25, tier = "epic", kind = "map", label = "A map" },
+	{ w = 20, tier = "rare", kind = "points", min = 25000, max = 60000, label = "25,000 to 60,000 points" },
+	{ w = 15, tier = "epic", kind = "points", min = 80000, max = 150000, label = "80,000 to 150,000 points" },
+	{ w = 10, tier = "legendary", kind = "car", label = "A Robux-only car" },
+} })
+table.insert(C.CRATES, { id = "mythic", name = "Mythic crate", rp = 799, product = "rcrate_mythic", dupe = 150000, desc = "Robux crate. The best odds in the game for a Robux-only car.", drops = {
+	{ w = 35, tier = "legendary", kind = "car", label = "A Robux-only car" },
+	{ w = 30, tier = "epic", kind = "map", label = "A map" },
+	{ w = 20, tier = "epic", kind = "points", min = 150000, max = 300000, label = "150,000 to 300,000 points" },
+	{ w = 15, tier = "rare", kind = "look", label = "A Robux look item (paint, wheels, liveries, neon)" },
+} })
 local crateById = {}
 for _, c in ipairs(C.CRATES) do crateById[c.id] = c end
 function C.crate(id) return crateById[id] end

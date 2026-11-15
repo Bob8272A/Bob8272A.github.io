@@ -38,6 +38,7 @@ local save = Instance.new("RemoteEvent"); save.Name = "IWSave"; save.Parent = Re
 local submit = Instance.new("RemoteEvent"); submit.Name = "IWSubmit"; submit.Parent = ReplicatedStorage
 local garage = Instance.new("RemoteFunction"); garage.Name = "IWGarage"; garage.Parent = ReplicatedStorage -- buy, equip, builds
 local pushState = Instance.new("RemoteEvent"); pushState.Name = "IWState"; pushState.Parent = ReplicatedStorage -- server -> client garage state
+local pushCrate = Instance.new("RemoteEvent"); pushCrate.Name = "IWCrate"; pushCrate.Parent = ReplicatedStorage -- server -> client: a paid crate was opened (or cancelled)
 
 -- DataStores only work in a published place with Studio API access turned on; otherwise keep data for this session only.
 local store
@@ -45,7 +46,7 @@ pcall(function() store = DataStoreService:GetDataStore("InterstateWeave_v2") end
 
 local cache, lastSubmit, lastSave, dirty = {}, {}, {}, {}
 
-local function blank() return { settings = {}, career = 0, wallet = 0, best = { endless = 0, stunt = 0, pursuit = 0, rush = 0 }, owned = {}, equip = {}, builds = {}, passes = {}, maps = {} } end
+local function blank() return { settings = {}, career = 0, wallet = 0, best = { endless = 0, stunt = 0, pursuit = 0, rush = 0 }, owned = {}, equip = {}, builds = {}, passes = {}, maps = {}, receipts = {} } end
 local PASS_BY_ID = {}
 for key, id in pairs(Catalog.PASS_IDS) do if id ~= 0 then PASS_BY_ID[id] = key end end
 local function slotsOf(data) return Catalog.BASE_SLOTS + (data.passes.slots and Catalog.PASS_SLOTS or 0) end
@@ -63,6 +64,7 @@ local function loadPlayer(plr)
 			if type(saved.owned) == "table" then for id, v in pairs(saved.owned) do if v == true and Catalog.part(id) then data.owned[id] = true end end end
 			if type(saved.passes) == "table" then for k, v in pairs(saved.passes) do if v == true and Catalog.PASS_IDS[k] ~= nil then data.passes[k] = true end end end
 			if type(saved.maps) == "table" then for id, v in pairs(saved.maps) do if v == true and Catalog.map(id) then data.maps[id] = true end end end
+			if type(saved.receipts) == "table" then for id, v in pairs(saved.receipts) do if v == true and type(id) == "string" then data.receipts[id] = true end end end
 			if type(saved.equip) == "table" then for car, eq in pairs(saved.equip) do if carOk(car) and type(eq) == "table" then data.equip[car] = eq end end end
 			if type(saved.builds) == "table" then
 				for i = 1, Catalog.BASE_SLOTS + Catalog.PASS_SLOTS do
@@ -100,6 +102,8 @@ local function flush(plr)
 			old.owned, old.equip, old.builds, old.maps = data.owned, data.equip, data.builds, data.maps
 			old.passes = type(old.passes) == "table" and old.passes or {}
 			for k, v in pairs(data.passes) do old.passes[k] = v end
+			old.receipts = type(old.receipts) == "table" and old.receipts or {}
+			for k, v in pairs(data.receipts) do old.receipts[k] = v end
 			old.best = type(old.best) == "table" and old.best or {}
 			for m in pairs(MODES) do old.best[m] = math.max(tonumber(old.best[m]) or 0, data.best[m]) end
 			return old
@@ -158,6 +162,44 @@ end)
 ---------------------------------------------------------------- garage: buying, equipping, builds (all checked here, never trusted from the client)
 local lastGarage = {}
 local crateRng = Random.new()
+local function rollPrize(data, cr) -- picks the prize on the server, puts it into the player's data and returns it
+	local roll, drop = crateRng:NextNumber() * 100, cr.drops[#cr.drops]
+	for _, d in ipairs(cr.drops) do roll -= d.w; if roll < 0 then drop = d; break end end
+	local prize = { tier = drop.tier }
+	if drop.kind == "points" then
+		prize.kind = "points"; prize.points = math.floor(crateRng:NextInteger(drop.min, drop.max) / 100 + 0.5) * 100
+	else
+		local pool = {}
+		if drop.kind == "part" then
+			for _, p in ipairs(Catalog.PARTS) do
+				if not p.robux and p.price > 0 and p.price <= drop.max and not data.owned[p.id] then pool[#pool + 1] = { kind = "part", id = p.id, name = p.name .. " (" .. Catalog.cat(p.cat).name .. ")" } end
+			end
+		elseif drop.kind == "look" then
+			for _, key in ipairs(Catalog.LOOK_PASSES) do if not data.passes[key] then pool[#pool + 1] = { kind = "pass", id = key, name = Catalog.passName(key) } end end
+		elseif drop.kind == "car" then
+			for _, key in ipairs(Catalog.CAR_PASSES) do if not data.passes[key] then pool[#pool + 1] = { kind = "pass", id = key, name = Catalog.passName(key) } end end
+		elseif drop.kind == "map" then
+			for _, m in ipairs(Catalog.MAPS) do if not Catalog.mapOwned(data, m) then pool[#pool + 1] = { kind = "map", id = m.id, name = m.name .. " (map)" } end end
+		end
+		if #pool == 0 then -- nothing left to win in this slot: points back instead
+			prize.kind = "points"; prize.points = cr.dupe; prize.dupe = true
+		else
+			local won = pool[crateRng:NextInteger(1, #pool)]
+			prize.kind, prize.id, prize.name = won.kind, won.id, won.name
+			if won.kind == "part" then data.owned[won.id] = true elseif won.kind == "pass" then data.passes[won.id] = true else data.maps[won.id] = true end
+		end
+	end
+	if prize.points then data.wallet += prize.points; prize.name = ("%d points"):format(prize.points) end
+	return prize
+end
+local PolicyService = game:GetService("PolicyService")
+local function randomItemsRestricted(plr) -- parental / regional limit on paid random items; if the lookup fails, stay safe and block
+	local ok, info = pcall(function() return PolicyService:GetPolicyInfoForPlayerAsync(plr) end)
+	if not ok or type(info) ~= "table" then return true end
+	return info.ArePaidRandomItemsRestricted == true
+end
+local PRODUCT_CRATE = {}
+for _, c in ipairs(Catalog.CRATES) do if c.product and Catalog.PRODUCT_IDS[c.product] ~= 0 then PRODUCT_CRATE[Catalog.PRODUCT_IDS[c.product]] = c end end
 local function reply(data, ok, msg) return ok, msg, stateOf(data) end
 garage.OnServerInvoke = function(plr, action, a, b, c)
 	local data = cache[plr]
@@ -209,39 +251,27 @@ garage.OnServerInvoke = function(plr, action, a, b, c)
 		return reply(data, true, m.name .. " unlocked")
 	elseif action == "crate" then -- open a crate: paid with points, and the prize is picked here on the server
 		local cr = type(a) == "string" and Catalog.crate(a)
-		if not cr then return reply(data, false, "Unknown crate") end
+		if not cr or cr.rp then return reply(data, false, "Unknown crate") end
 		if data.wallet < cr.price then return reply(data, false, "Not enough points") end
 		data.wallet -= cr.price
-		local roll, drop = crateRng:NextNumber() * 100, cr.drops[#cr.drops]
-		for _, d in ipairs(cr.drops) do roll -= d.w; if roll < 0 then drop = d; break end end
-		local prize = { tier = drop.tier }
-		if drop.kind == "points" then
-			prize.kind = "points"; prize.points = math.floor(crateRng:NextInteger(drop.min, drop.max) / 100 + 0.5) * 100
-		else
-			local pool = {}
-			if drop.kind == "part" then
-				for _, p in ipairs(Catalog.PARTS) do
-					if not p.robux and p.price > 0 and p.price <= drop.max and not data.owned[p.id] then pool[#pool + 1] = { kind = "part", id = p.id, name = p.name .. " (" .. Catalog.cat(p.cat).name .. ")" } end
-				end
-			elseif drop.kind == "look" then
-				for _, key in ipairs(Catalog.LOOK_PASSES) do if not data.passes[key] then pool[#pool + 1] = { kind = "pass", id = key, name = Catalog.passName(key) } end end
-			elseif drop.kind == "car" then
-				for _, key in ipairs(Catalog.CAR_PASSES) do if not data.passes[key] then pool[#pool + 1] = { kind = "pass", id = key, name = Catalog.passName(key) } end end
-			elseif drop.kind == "map" then
-				for _, m in ipairs(Catalog.MAPS) do if not Catalog.mapOwned(data, m) then pool[#pool + 1] = { kind = "map", id = m.id, name = m.name .. " (map)" } end end
-			end
-			if #pool == 0 then -- nothing left to win in this slot: points back instead
-				prize.kind = "points"; prize.points = cr.dupe; prize.dupe = true
-			else
-				local won = pool[crateRng:NextInteger(1, #pool)]
-				prize.kind, prize.id, prize.name = won.kind, won.id, won.name
-				if won.kind == "part" then data.owned[won.id] = true elseif won.kind == "pass" then data.passes[won.id] = true else data.maps[won.id] = true end
-			end
-		end
-		if prize.points then data.wallet += prize.points; prize.name = ("%d points"):format(prize.points) end
+		local prize = rollPrize(data, cr)
 		dirty[plr] = true; queueFlush(plr)
 		local ok, msg, st = reply(data, true, "")
 		return ok, msg, st, prize
+	elseif action == "crateRobux" then -- start a Robux crate purchase; the prize itself is handed out in ProcessReceipt
+		local cr = type(a) == "string" and Catalog.crate(a)
+		if not cr or not cr.rp then return reply(data, false, "Unknown crate") end
+		if randomItemsRestricted(plr) then return reply(data, false, "Paid random items are turned off for your account") end
+		local id = Catalog.PRODUCT_IDS[cr.product]
+		if not id or id == 0 then
+			if not RunService:IsStudio() then return reply(data, false, "This crate is not on sale yet") end
+			local prize = rollPrize(data, cr) -- Studio test: opens for free
+			dirty[plr] = true; queueFlush(plr)
+			local ok, msg, st = reply(data, true, "")
+			return ok, msg, st, prize
+		end
+		MarketplaceService:PromptProductPurchase(plr, id) -- the prize comes back through the IWCrate event
+		return reply(data, true, "waiting")
 	elseif action == "studioGrant" then -- Studio only: lets you test a Robux item before its pass exists
 		if not RunService:IsStudio() or type(a) ~= "string" then return reply(data, false, "Not available") end
 		if a == "points" then data.wallet += 50000; data.career = math.max(data.career, 200000); dirty[plr] = true; return reply(data, true, "Studio test points") end
@@ -258,4 +288,24 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(plr, passId, 
 	data.passes[key] = true; dirty[plr] = true; flush(plr)
 	pushState:FireClient(plr, stateOf(data))
 end)
+MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId, productId, purchased)
+	if purchased then return end
+	local plr = Players:GetPlayerByUserId(userId)
+	if plr and PRODUCT_CRATE[productId] then pushCrate:FireClient(plr, nil) end -- closed the prompt: tell the client to stop waiting
+end)
+MarketplaceService.ProcessReceipt = function(info)
+	local plr = Players:GetPlayerByUserId(info.PlayerId)
+	local cr = PRODUCT_CRATE[info.ProductId]
+	if not cr then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	if not plr then return Enum.ProductPurchaseDecision.NotProcessedYet end -- they left: Roblox asks again when they return
+	local data = cache[plr]
+	if not data then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	local rid = tostring(info.PurchaseId)
+	if data.receipts[rid] then return Enum.ProductPurchaseDecision.PurchaseGranted end -- already handed out
+	if randomItemsRestricted(plr) then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	local prize = rollPrize(data, cr)
+	data.receipts[rid] = true; dirty[plr] = true; flush(plr)
+	pushCrate:FireClient(plr, prize, stateOf(data))
+	return Enum.ProductPurchaseDecision.PurchaseGranted
+end
 Players.PlayerRemoving:Connect(function(p) lastGarage[p] = nil; flushTimer[p] = nil end)
