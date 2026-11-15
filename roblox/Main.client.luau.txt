@@ -2364,7 +2364,7 @@ UIS.InputBegan:Connect(function(input, gp)
 	end
 end)
 UIS.InputEnded:Connect(function(input) keys[input.KeyCode] = nil end)
-UIS.WindowFocusReleased:Connect(function() keys = {}; if state == "play" then togglePause() end end)
+UIS.WindowFocusReleased:Connect(function() keys = {}; if state == "play" and not RunService:IsStudio() then togglePause() end end)
 
 
 ---------------------------------------------------------------- tutorial (first run, or the Tutorial button) and touch controls
