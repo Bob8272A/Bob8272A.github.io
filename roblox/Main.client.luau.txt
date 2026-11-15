@@ -1470,13 +1470,16 @@ local function updateStunt(dt)
 	local ground, onRamp = 0, false
 	for _, r in ipairs(ramps) do
 		local t = (P.f - (r.f - RAMP.L / 2)) / RAMP.L
-		if math.abs(P.x - r.x) < RAMP.W / 2 + 0.3 and t >= 0 and t <= 1 then
+		local inLane = math.abs(P.x - r.x) < RAMP.W / 2 + 0.3
+		if inLane and t >= 0 and t <= 1 then
 			ground = t * RAMP.H; onRamp = true
-			if not P.air and t > 0.97 then
-				P.air = true; P.airF = P.f; P.cleared = 0; P.y = RAMP.H
-				P.vy = P.v * (RAMP.H / RAMP.L) * 1.05 + 1.5
-			end
 		end
+		-- launch when the car crosses the lip (checked by crossing, so a fast frame can't skip it)
+		if inLane and not P.air and r.lastT and r.lastT >= 0 and r.lastT < 1 and t >= 0.97 then
+			P.air = true; P.airF = P.f; P.cleared = 0; P.y = RAMP.H; onRamp = false
+			P.vy = P.v * (RAMP.H / RAMP.L) * 1.05 + 1.5
+		end
+		r.lastT = t
 	end
 	if P.air then
 		P.vy -= 15 * dt; P.y += P.vy * dt
