@@ -482,7 +482,7 @@ local OR1_KEY = { -- s, half-width, floor, widest-point height, fender-crown hei
 	{ -2.30, 0.925, 0.300, 0.600, 0.822, 0.80, 0.800 },
 }
 local OR1_CAN = { { 1.02, 0.46, 0.56 }, { 0.80, 0.585, 0.745 }, { 0.50, 0.675, 0.925 }, { 0.15, 0.725, 1.085 }, { -0.25, 0.735, 1.165 }, { -0.70, 0.705, 1.150 }, { -1.10, 0.620, 1.060 }, { -1.50, 0.500, 0.955 }, { -1.90, 0.360, 0.850 } }
-BUILD.or1 = function(car, c)
+local function buildOr1(car, c, cf)
 	local W, wr, wheels = 2.04, 0.36, { 1.36, -1.44 }
 	do -- outline for the garage kits and decals
 		local top, bot, can = {}, {}, {}
@@ -494,7 +494,6 @@ BUILD.or1 = function(car, c)
 		for _, p in ipairs(bot) do body[#body + 1] = p end
 		car.spec = { W = W, L = 4.66, headS = 2.33, tailS = -2.3, tailY = 0.66, clear = 0.1, wheels = wheels, wr = wr, tireW = 0.31, body = body, shells = { { pts = can, mat = "glass" } } }
 	end
-	local cf = CFG.or1
 	local X = mkX(car, cf.accent, cf.led)
 	local paint = car.paint
 	for i = 1, #OR1_KEY - 1 do
@@ -705,6 +704,8 @@ local function dressCar(car, look)
 	lights(car, sp, look.lights, col)
 end
 
+BUILD.or1 = function(car, c) buildOr1(car, c, CFG.or1) end
+
 CAR_DIM = {
 	sedan = { L = 4.85, W = 1.86 }, hatch = { L = 4.2, W = 1.78 }, suv = { L = 4.78, W = 1.93 }, pickup = { L = 5.6, W = 2.0 },
 	van = { L = 5.9, W = 2.0 }, semi = { L = 19.1, W = 2.6 }, police = { L = 4.85, W = 1.86 },
@@ -712,6 +713,30 @@ CAR_DIM = {
 	apex = { L = 4.85, W = 2.08 }, or1 = { L = 4.66, W = 2.04 },
 }
 local PLAYER_KINDS = { vanta = true, strada = true, or1 = true, kestrel = true, phantom = true, apex = true }
+
+-- 15 more drivable cars built on the existing bodies with their own colours: id, body, dimensions from, rim, accent, led, glow
+local NEWCARS = {
+	{ "pip", "hatch", "hatch", cfg("b5bcc2", "1b1d20", "ff2a1a") },
+	{ "pipr", "hatch", "hatch", cfg("e24a1a", "e24a1a", "ff2a1a") },
+	{ "meridian", "sedan", "sedan", cfg("a9afb5", "1b1d20", "ff2a1a") },
+	{ "vanline", "van", "van", cfg("9aa1a7", "1b1d20", "ff2a1a") },
+	{ "ridgeback", "suv", "suv", cfg("2a2d31", "d9a400", "ff2a1a") },
+	{ "hauler", "pickup", "pickup", cfg("2a2d31", "e24a1a", "ff2a1a") },
+	{ "vantars", "sport", "vanta", cfg("d4af37", "d4af37", "ff2a1a") },
+	{ "gt500", "muscle", "strada", cfg("c9ced3", "1b4fd8", "ff2a1a", "1b4fd8") },
+	{ "kestrels", "wedge", "kestrel", cfg("e8e8e4", "e24a1a", "ffffff", "ff7a2a") },
+	{ "phantomx", "ev", "phantom", cfg("141516", "ff4fa8", "ff4fa8", "ff4fa8") },
+	{ "apexr", "hyper", "apex", cfg("1b1d20", "22d3ff", "22d3ff", "22d3ff") },
+	{ "or2", "or1", "or1", cfg("1a1b1d", "ff7a1a", "ff2a1a") },
+	{ "nova", "hyper", "apex", cfg("e8e8e4", "7ff0ff", "7ff0ff", "22d3ff") },
+	{ "specter", "ev", "phantom", cfg("6a3fd8", "8a4dff", "8a4dff", "8a4dff") },
+	{ "eclipse", "or1", "or1", cfg("c9a227", "c9a227", "ff2a1a", "c9a227") },
+}
+for _, n in ipairs(NEWCARS) do
+	CAR_DIM[n[1]] = CAR_DIM[n[3]]; PLAYER_KINDS[n[1]] = true
+	if n[2] == "or1" then BUILD[n[1]] = function(car, c) buildOr1(car, c, n[4]) end
+	else BUILD[n[1]] = function(car, c) buildWeb(car, c, n[2], n[4]) end end
+end
 function buildCar(kind, color, look)
 	local d = CAR_DIM[kind]
 	local car = { kind = kind, L = d.L, W = d.W, paint = color, hi = PLAYER_KINDS[kind] or kind == "police" }
@@ -733,12 +758,27 @@ end
 
 -- Garage, same stats as the web version: top speed in m/s, power in W, unlock cost in career points
 local CARS = {
+	{ id = "pip", name = "Pip GT", top = 98, power = 0.42e6, grip = 0.88, steer = 0.95, brake = 0.9, unlock = 0, blurb = "A tiny hatchback. Slow, but easy to place in traffic." },
 	{ id = "vanta", name = "Vanta GT", top = 125, power = 0.8e6, grip = 1.0, steer = 1.0, brake = 1.0, unlock = 0, blurb = "Balanced starter coupe." },
-	{ id = "or1", name = "OR-1", top = 195, power = 3.8e6, grip = 1.55, steer = 1.5, brake = 1.75, unlock = 0, blurb = "The fastest car in the garage: a low hypercar with a glass canopy, rear wing and full aero." },
+	{ id = "meridian", name = "Meridian S", top = 110, power = 0.6e6, grip = 0.95, steer = 0.97, brake = 0.95, unlock = 5000, blurb = "A calm family sedan with a surprising turn of speed." },
+	{ id = "vanline", name = "Vanline", top = 100, power = 0.5e6, grip = 0.8, steer = 0.85, brake = 0.85, unlock = 8000, blurb = "A delivery van that thinks it's a race car." },
+	{ id = "ridgeback", name = "Ridgeback", top = 115, power = 0.85e6, grip = 0.9, steer = 0.9, brake = 0.9, unlock = 12000, blurb = "A tall SUV with grip to spare." },
+	{ id = "pipr", name = "Pip R", top = 120, power = 0.8e6, grip = 1.0, steer = 1.05, brake = 1.0, unlock = 15000, blurb = "The hatchback after a weekend at the tuner." },
+	{ id = "hauler", name = "Hauler R", top = 118, power = 0.9e6, grip = 0.88, steer = 0.9, brake = 0.92, unlock = 18000, blurb = "A pickup with a big engine and a long wheelbase." },
 	{ id = "strada", name = "Strada R", top = 133, power = 1.1e6, grip = 1.06, steer = 1.07, brake = 1.1, unlock = 25000, blurb = "Muscle car with a hood scoop and twin stripes." },
+	{ id = "vantars", name = "Vanta RS", top = 138, power = 1.0e6, grip = 1.1, steer = 1.1, brake = 1.12, unlock = 40000, blurb = "The Vanta with gold wheels and a sharper tune." },
 	{ id = "kestrel", name = "Kestrel V12", top = 145, power = 1.45e6, grip = 1.15, steer = 1.16, brake = 1.22, unlock = 75000, blurb = "Wedge supercar with a big rear wing." },
+	{ id = "gt500", name = "Strada GT500", top = 148, power = 1.5e6, grip = 1.12, steer = 1.12, brake = 1.2, unlock = 110000, blurb = "The muscle car with blue stripes." },
 	{ id = "phantom", name = "Phantom EV", top = 152, power = 2.0e6, grip = 1.22, steer = 1.25, brake = 1.32, unlock = 175000, blurb = "Electric with violent acceleration and light-blade sills." },
+	{ id = "kestrels", name = "Kestrel S", top = 160, power = 1.9e6, grip = 1.25, steer = 1.25, brake = 1.34, unlock = 240000, blurb = "A sharper, lighter Kestrel with orange trim." },
 	{ id = "apex", name = "Apex LMP", top = 165, power = 2.35e6, grip = 1.34, steer = 1.36, brake = 1.48, unlock = 400000, blurb = "Le Mans-style hypercar with a shark fin and gold wheels." },
+	{ id = "phantomx", name = "Phantom X", top = 172, power = 2.8e6, grip = 1.35, steer = 1.4, brake = 1.5, unlock = 520000, blurb = "A faster Phantom with magenta light-blades." },
+	{ id = "apexr", name = "Apex R", top = 182, power = 3.1e6, grip = 1.45, steer = 1.45, brake = 1.62, unlock = 750000, blurb = "Apex with a cyan aero kit and a lot more power." },
+	{ id = "or1", name = "OR-1", top = 195, power = 3.8e6, grip = 1.55, steer = 1.5, brake = 1.75, unlock = 1000000, blurb = "The fastest car you can earn: a low hypercar with a glass canopy, rear wing and full aero." },
+	{ id = "or2", name = "OR-2", top = 205, power = 4.4e6, grip = 1.65, steer = 1.6, brake = 1.9, robux = "car_or2", unlock = 0, blurb = "Robux only. The OR-1 reworked with orange trim and more of everything." },
+	{ id = "nova", name = "Nova", top = 215, power = 5.2e6, grip = 1.75, steer = 1.7, brake = 2.05, robux = "car_nova", unlock = 0, blurb = "Robux only. A hypercar with ice-blue trim that outruns anything you can earn." },
+	{ id = "specter", name = "Specter", top = 225, power = 6.2e6, grip = 1.85, steer = 1.8, brake = 2.2, robux = "car_specter", unlock = 0, blurb = "Robux only. An electric ghost with violet light-blades and brutal acceleration." },
+	{ id = "eclipse", name = "Eclipse", top = 235, power = 7.5e6, grip = 1.95, steer = 1.9, brake = 2.35, robux = "car_eclipse", unlock = 0, blurb = "Robux only. The fastest car in the game, with gold trim." },
 }
 
 ---------------------------------------------------------------- lighting
@@ -972,6 +1012,7 @@ end
 end
 
 ---------------------------------------------------------------- settings, progress and tuning (same values as the web version)
+local GAR = {}
 local SET = { steer = 1.0, autoCenter = false, rewindFx = true, motionBlur = "light", swipeSafe = false, sfx = 0.8, muted = false,
 	diff = "normal", traffic = 1, weather = "clear", tod = "dusk", paint = 1, car = "vanta", mode = "endless",
 	divided = true, terrain = "flat", track = "night", music = 0.7, tutorialDone = false }
@@ -1006,7 +1047,7 @@ local function carDef(id, eq)
 end
 local previewEq -- garage: parts being tried on before they are bought
 local function lookFor(id) return previewEq or CATALOG.clean(PROG, PROG.equip[id]) end
-local function unlocked(c) return c.unlock <= PROG.career end
+local function unlocked(c) if c.robux then return PROG.passes[c.robux] == true end return c.unlock <= PROG.career end
 local function paceMult(mph) return mph < 65 and 0.5 or mph < 90 and 1 or mph < 120 and 2 or mph < 160 and 3 or mph < 220 and 4 or 5 end
 local function damp(a, b, k, dt) return b + (a - b) * math.exp(-k * dt) end
 local function sgn(x) return x > 0 and 1 or x < 0 and -1 or 0 end
@@ -1501,13 +1542,13 @@ local function refreshCars()
 		local on, ok = e.c.id == SET.car, unlocked(e.c)
 		e.b.BackgroundTransparency = on and 0 or 1; e.name.TextColor3 = on and C_DEEP or C_PAPER; e.sub.TextColor3 = on and C_DEEP or C_SOFT
 		e.st.Transparency = on and 0 or 0.6; e.b.Active = ok
-		e.sub.Text = ok and ("%d mph"):format(math.floor(e.c.vmax * 2.23694)) or ("🔒 %s pts"):format(commas(e.c.unlock))
+		e.sub.Text = ok and ("%d mph"):format(math.floor(e.c.vmax * 2.23694)) or (e.c.robux and "R$ ONLY" or ("🔒 %s pts"):format(commas(e.c.unlock)))
 	end
 	local c = CUR
-	statRows.top.fill.Size = UDim2.fromScale(c.top / 200, 1); statRows.top.val.Text = ("%d mph"):format(math.floor(c.vmax * 2.23694))
-	statRows.acc.fill.Size = UDim2.fromScale(math.min(1, c.power / 4e6), 1); statRows.acc.val.Text = ("%d hp"):format(math.floor(c.power / 745.7 / 2.2))
-	statRows.grip.fill.Size = UDim2.fromScale(c.grip / 1.6, 1); statRows.grip.val.Text = ("%.2f g"):format(c.grip)
-	statRows.brake.fill.Size = UDim2.fromScale(c.brake / 1.8, 1); statRows.brake.val.Text = ("%.2f"):format(c.brake)
+	statRows.top.fill.Size = UDim2.fromScale(math.min(1, c.vmax * 2.23694 / 560), 1); statRows.top.val.Text = ("%d mph"):format(math.floor(c.vmax * 2.23694))
+	statRows.acc.fill.Size = UDim2.fromScale(math.min(1, c.power / 8e6), 1); statRows.acc.val.Text = ("%d hp"):format(math.floor(c.power / 745.7 / 2.2))
+	statRows.grip.fill.Size = UDim2.fromScale(math.min(1, c.grip / 2.2), 1); statRows.grip.val.Text = ("%.2f g"):format(c.grip)
+	statRows.brake.fill.Size = UDim2.fromScale(math.min(1, c.brake / 2.6), 1); statRows.brake.val.Text = ("%.2f"):format(c.brake)
 	blurb.Text = c.blurb
 end
 for _, c in ipairs(CARS) do
@@ -1517,6 +1558,7 @@ for _, c in ipairs(CARS) do
 	local sub = text(b, { Size = UDim2.new(1, 0, 0, 13), Position = UDim2.fromOffset(0, 19), Text = "", TextSize = 10, Font = F_MONO })
 	carBtns[#carBtns + 1] = { b = b, c = c, name = nm, sub = sub, st = st }
 	b.MouseButton1Click:Connect(function()
+		if not unlocked(c) and c.robux then popup("ROBUX ONLY", c.name); GAR.promptPass(c.robux); return end
 		if not unlocked(c) then popup("LOCKED", ("Earn %s career points to unlock the %s"):format(commas(c.unlock), c.name)); return end
 		play("tick", 0.3, 1.3); SET.car = c.id; CUR = c; refreshCars(); showCar(); saveSettings()
 	end)
@@ -1651,7 +1693,6 @@ end
 __build_8643()
 
 ---------------------------------------------------------------- garage: parts, saved builds and the Robux shop
-local GAR = {}
 local function __build_garage()
 	local corner, stroke, pad, vlist, hlist, frame, text, btn, goBtn, seg = UI.corner, UI.stroke, UI.pad, UI.vlist, UI.hlist, UI.frame, UI.text, UI.btn, UI.goBtn, UI.seg
 	local MarketplaceService = game:GetService("MarketplaceService")
@@ -1700,7 +1741,7 @@ local function __build_garage()
 		return { c.vmax * 2.23694, c.power / 745.7 / 2.2, c.grip, c.brake }
 	end
 	local function fracs(c)
-		return { c.vmax * 2.23694 / 420, math.min(1, c.power / 4.6e6), math.min(1, c.grip / 1.9), math.min(1, c.brake / 2.4) }
+		return { c.vmax * 2.23694 / 560, math.min(1, c.power / 8e6), math.min(1, c.grip / 2.2), math.min(1, c.brake / 2.6) }
 	end
 	local FMT = { "%d mph", "%d hp", "%.2f g", "%.2f" }
 	local DFMT = { "%+d", "%+d", "%+.2f", "%+.2f" }
@@ -1770,7 +1811,7 @@ local function __build_garage()
 		if ev then ev.OnClientEvent:Connect(function(st)
 			applyState(st); CUR = carDef(SET.car)
 			if O.Visible then renderAll() end
-			if state == "menu" then showCar() end
+			if state == "menu" then showCar(); refreshMenu() end
 		end) end
 	end)
 	-- live Robux prices for passes that have an id
@@ -1807,6 +1848,7 @@ local function __build_garage()
 			popup("COMING SOON", "This item is not on sale yet")
 		end
 	end
+	GAR.promptPass = promptPass
 	local function buy(p)
 		task.spawn(function()
 			local ok, msg = call("buy", p.id)

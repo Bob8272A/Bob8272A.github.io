@@ -13,6 +13,10 @@ C.PASS_IDS = {
 	pack_neon = 0, -- Neon night pack (neon lights and tail trails)
 	slots = 0, -- 3 extra build slots
 	double = 0, -- 2x spendable points from every run
+	car_or2 = 0, -- OR-2 (Robux-only car)
+	car_nova = 0, -- Nova (Robux-only car)
+	car_specter = 0, -- Specter (Robux-only car)
+	car_eclipse = 0, -- Eclipse (Robux-only car)
 }
 -- shop listing; rp is only a fallback label, the real price is whatever you set in Creator Hub (it is read live when the id is set)
 C.PASSES = {
@@ -24,7 +28,12 @@ C.PASSES = {
 	{ key = "slots", name = "3 extra build slots", rp = 99, kind = "convenience", desc = "Save six builds instead of three." },
 	{ key = "double", name = "Double points", rp = 399, kind = "boost", desc = "Earn 2x spendable points from every run. Scores, leaderboards and car unlocks are unchanged." },
 }
+table.insert(C.PASSES, 1, { key = "car_eclipse", name = "Eclipse (car)", rp = 999, kind = "car", desc = "The fastest car in the game: 235 top speed, with gold trim. Robux only." })
+table.insert(C.PASSES, 1, { key = "car_specter", name = "Specter (car)", rp = 799, kind = "car", desc = "An electric ghost with violet light-blades and brutal acceleration. Robux only." })
+table.insert(C.PASSES, 1, { key = "car_nova", name = "Nova (car)", rp = 599, kind = "car", desc = "A hypercar with ice-blue trim that outruns anything you can earn. Robux only." })
+table.insert(C.PASSES, 1, { key = "car_or2", name = "OR-2 (car)", rp = 399, kind = "car", desc = "The OR-1 reworked with orange trim and more of everything. Robux only." })
 C.BASE_SLOTS, C.PASS_SLOTS = 3, 3
+C.CAR_IDS = { "pip", "vanta", "meridian", "vanline", "ridgeback", "pipr", "hauler", "strada", "vantars", "kestrel", "gt500", "phantom", "kestrels", "apex", "phantomx", "apexr", "or1", "or2", "nova", "specter", "eclipse" }
 
 ---------------------------------------------------------------- parts
 -- cat: engine, tyres, brakes, susp are PERFORMANCE (points only). paint, wheels, kit, decal, lights are LOOK.

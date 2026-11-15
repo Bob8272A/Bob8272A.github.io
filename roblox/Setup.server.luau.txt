@@ -22,7 +22,7 @@ local SETTINGS = {
 	paint = function(v) return type(v) == "number" and v >= 1 and v <= 5 and v % 1 == 0 end,
 	motionBlur = { off = true, light = true, strong = true }, diff = { easy = true, normal = true, hard = true },
 	weather = { clear = true, rain = true }, tod = { day = true, dusk = true, night = true },
-	car = { vanta = true, or1 = true, strada = true, kestrel = true, phantom = true, apex = true }, mode = { endless = true, stunt = true, pursuit = true, rush = true },
+	car = (function() local t = {}; for _, id in ipairs(Catalog.CAR_IDS) do t[id] = true end return t end)(), mode = { endless = true, stunt = true, pursuit = true, rush = true },
 }
 local function validSetting(k, v)
 	local rule = SETTINGS[k]
