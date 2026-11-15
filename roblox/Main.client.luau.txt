@@ -1201,7 +1201,9 @@ local function carDef(id, eq)
 end
 local previewEq -- garage: parts being tried on before they are bought
 local function lookFor(id) return previewEq or CATALOG.clean(PROG, PROG.equip[id]) end
-local function unlocked(c) if c.robux then return PROG.passes[c.robux] == true end return c.unlock <= PROG.career end
+-- TEMP: unlock every car while testing (Studio only; set to false to restore progression)
+local TEST_UNLOCK_ALL = true
+local function unlocked(c) if TEST_UNLOCK_ALL and game:GetService("RunService"):IsStudio() then return true end if c.robux then return PROG.passes[c.robux] == true end return c.unlock <= PROG.career end
 local function paceMult(mph) return mph < 65 and 0.5 or mph < 90 and 1 or mph < 120 and 2 or mph < 160 and 3 or mph < 220 and 4 or 5 end
 local function damp(a, b, k, dt) return b + (a - b) * math.exp(-k * dt) end
 local function sgn(x) return x > 0 and 1 or x < 0 and -1 or 0 end
