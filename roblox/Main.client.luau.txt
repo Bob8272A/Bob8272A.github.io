@@ -2543,7 +2543,7 @@ if RunService:IsStudio() then
 			if k then if v == "true" then v = true elseif v == "false" then v = false end; SET[k] = v; applyTod(); refreshMenu() end
 			return
 		end
-		if cmd == "ramp" and state == "play" and ramps[1] then
+		if cmd == "ramp" and (state == "play" or state == "paused") and ramps[1] then
 			local r = ramps[1]
 			P.f = r.f - RAMP.L / 2 - 45; P.x = r.x; P.h = 0; P.yaw = 0; P.si = 0; P.v = 42; P.air = false; P.y = 0; P.crashed = false
 			hist = {}
