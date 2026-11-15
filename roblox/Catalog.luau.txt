@@ -17,6 +17,11 @@ C.PASS_IDS = {
 	car_nova = 0, -- Nova (Robux-only car)
 	car_specter = 0, -- Specter (Robux-only car)
 	car_eclipse = 0, -- Eclipse (Robux-only car)
+	map_mesa = 0, -- Red Mesa (map; can also be bought with points)
+	map_coast = 0, -- Sunset Coast (map)
+	map_yuki = 0, -- Yuki Pass (map)
+	map_neon = 0, -- Neon City (map)
+	map_lunar = 0, -- Lunar Loop (map)
 }
 -- shop listing; rp is only a fallback label, the real price is whatever you set in Creator Hub (it is read live when the id is set)
 C.PASSES = {
@@ -32,6 +37,29 @@ table.insert(C.PASSES, 1, { key = "car_eclipse", name = "Eclipse (car)", rp = 99
 table.insert(C.PASSES, 1, { key = "car_specter", name = "Specter (car)", rp = 799, kind = "car", desc = "An electric ghost with violet light-blades and brutal acceleration. Robux only." })
 table.insert(C.PASSES, 1, { key = "car_nova", name = "Nova (car)", rp = 599, kind = "car", desc = "A hypercar with ice-blue trim that outruns anything you can earn. Robux only." })
 table.insert(C.PASSES, 1, { key = "car_or2", name = "OR-2 (car)", rp = 399, kind = "car", desc = "The OR-1 reworked with orange trim and more of everything. Robux only." })
+
+---------------------------------------------------------------- maps
+-- Every map except the first is unlocked EITHER with spendable points (price) OR with its Robux pass (pass). Maps only change the scenery.
+C.MAPS = {
+	{ id = "interstate", name = "Interstate 90", price = 0, tag = "Pines and guardrails", desc = "The original highway." },
+	{ id = "mesa", name = "Red Mesa", price = 20000, pass = "map_mesa", tag = "Desert canyon", desc = "Cacti, red buttes and telephone poles under a hot sky." },
+	{ id = "coast", name = "Sunset Coast", price = 35000, pass = "map_coast", tag = "Cliffs and palms", desc = "A cliff road with the ocean on one side and palms on the other." },
+	{ id = "yuki", name = "Yuki Pass", price = 50000, pass = "map_yuki", tag = "Snowy Japanese hills", desc = "Falling snow, torii gates, stone lanterns and pagodas among white pines." },
+	{ id = "neon", name = "Neon City", price = 80000, pass = "map_neon", tag = "Futuristic city", desc = "Glowing towers, holo billboards and light rails." },
+	{ id = "lunar", name = "Lunar Loop", price = 120000, pass = "map_lunar", tag = "Moon base", desc = "Craters, habitat domes and the Earth hanging in a black sky." },
+}
+local mapById = {}
+for _, m in ipairs(C.MAPS) do mapById[m.id] = m end
+function C.map(id) return mapById[id] end
+function C.mapOwned(state, m)
+	return m.price == 0 or (state.maps and state.maps[m.id] == true) or (m.pass ~= nil and state.passes ~= nil and state.passes[m.pass] == true)
+end
+table.insert(C.PASSES, { key = "map_mesa", name = "Red Mesa (map)", rp = 79, kind = "map", desc = "Desert canyon map. Also sold for 20,000 points on the menu." })
+table.insert(C.PASSES, { key = "map_coast", name = "Sunset Coast (map)", rp = 99, kind = "map", desc = "Cliff road map. Also sold for 35,000 points on the menu." })
+table.insert(C.PASSES, { key = "map_yuki", name = "Yuki Pass (map)", rp = 129, kind = "map", desc = "Snowy Japanese hills map. Also sold for 50,000 points on the menu." })
+table.insert(C.PASSES, { key = "map_neon", name = "Neon City (map)", rp = 149, kind = "map", desc = "Futuristic city map. Also sold for 80,000 points on the menu." })
+table.insert(C.PASSES, { key = "map_lunar", name = "Lunar Loop (map)", rp = 199, kind = "map", desc = "Moon base map. Also sold for 120,000 points on the menu." })
+
 C.BASE_SLOTS, C.PASS_SLOTS = 3, 3
 C.CAR_IDS = { "pip", "vanta", "meridian", "vanline", "ridgeback", "pipr", "hauler", "strada", "vantars", "kestrel", "gt500", "phantom", "kestrels", "apex", "phantomx", "apexr", "or1", "or2", "nova", "specter", "eclipse" }
 
@@ -122,6 +150,47 @@ function C.clean(state, eq)
 	end
 	return out
 end
+---------------------------------------------------------------- crates
+-- Crates are bought with spendable POINTS only (never Robux) and the server picks the prize. Every chance is listed here and shown to the
+-- player before they open one. w = chance in percent (each crate adds up to 100).
+-- kinds: points (min..max), part (a points-shop part you do not own), look (a Robux look item you do not own), map, car (a Robux-only car).
+-- If you already own everything a prize could be, you get `dupe` points back instead.
+C.TIERS = {
+	common = { name = "Common", c = Color3.fromRGB(207, 229, 216) }, uncommon = { name = "Uncommon", c = Color3.fromRGB(120, 220, 80) },
+	rare = { name = "Rare", c = Color3.fromRGB(34, 211, 255) }, epic = { name = "Epic", c = Color3.fromRGB(178, 120, 255) },
+	legendary = { name = "Legendary", c = Color3.fromRGB(245, 181, 36) },
+}
+C.CRATES = {
+	{ id = "street", name = "Street crate", price = 3000, dupe = 1800, desc = "Cheap and cheerful. Mostly points and shop parts.", drops = {
+		{ w = 45, tier = "common", kind = "points", min = 500, max = 2500, label = "500 to 2,500 points" },
+		{ w = 30, tier = "uncommon", kind = "part", max = 3000, label = "A shop part worth up to 3,000 points" },
+		{ w = 15, tier = "uncommon", kind = "points", min = 4000, max = 7000, label = "4,000 to 7,000 points" },
+		{ w = 8, tier = "rare", kind = "look", label = "A Robux look item (paint, wheels, liveries, neon)" },
+		{ w = 2, tier = "epic", kind = "map", label = "A map" },
+	} },
+	{ id = "pro", name = "Pro crate", price = 12000, dupe = 7500, desc = "Better parts, and a real shot at Robux looks and maps.", drops = {
+		{ w = 35, tier = "common", kind = "points", min = 3000, max = 9000, label = "3,000 to 9,000 points" },
+		{ w = 27, tier = "uncommon", kind = "part", max = 20000, label = "Any shop part, including turbos and carbon brakes" },
+		{ w = 20, tier = "rare", kind = "look", label = "A Robux look item (paint, wheels, liveries, neon)" },
+		{ w = 10, tier = "rare", kind = "points", min = 18000, max = 30000, label = "18,000 to 30,000 points" },
+		{ w = 7, tier = "epic", kind = "map", label = "A map" },
+		{ w = 1, tier = "legendary", kind = "car", label = "A Robux-only car" },
+	} },
+	{ id = "legend", name = "Legend crate", price = 45000, dupe = 30000, desc = "The big one: maps, jackpots and Robux-only cars.", drops = {
+		{ w = 34, tier = "uncommon", kind = "points", min = 15000, max = 35000, label = "15,000 to 35,000 points" },
+		{ w = 26, tier = "rare", kind = "look", label = "A Robux look item (paint, wheels, liveries, neon)" },
+		{ w = 20, tier = "epic", kind = "map", label = "A map" },
+		{ w = 12, tier = "epic", kind = "points", min = 70000, max = 120000, label = "70,000 to 120,000 points" },
+		{ w = 8, tier = "legendary", kind = "car", label = "A Robux-only car" },
+	} },
+}
+local crateById = {}
+for _, c in ipairs(C.CRATES) do crateById[c.id] = c end
+function C.crate(id) return crateById[id] end
+C.LOOK_PASSES = { "paint_shift", "paint_chrome", "wheels_gold", "pack_livery", "pack_neon" }
+C.CAR_PASSES = { "car_or2", "car_nova", "car_specter", "car_eclipse" }
+function C.passName(key) for _, p in ipairs(C.PASSES) do if p.key == key then return p.name end end return key end
+
 -- base car + equipped performance parts -> tuned stats (top in m/s, power in W). Callers finish drag and gearing themselves.
 function C.tune(base, eq)
 	local c = {}

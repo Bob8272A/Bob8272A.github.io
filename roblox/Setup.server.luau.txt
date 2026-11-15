@@ -22,6 +22,7 @@ local SETTINGS = {
 	paint = function(v) return type(v) == "number" and v >= 1 and v <= 5 and v % 1 == 0 end,
 	motionBlur = { off = true, light = true, strong = true }, diff = { easy = true, normal = true, hard = true },
 	weather = { clear = true, rain = true }, tod = { day = true, dusk = true, night = true },
+	map = (function() local t = {}; for _, m in ipairs(Catalog.MAPS) do t[m.id] = true end return t end)(),
 	car = (function() local t = {}; for _, id in ipairs(Catalog.CAR_IDS) do t[id] = true end return t end)(), mode = { endless = true, stunt = true, pursuit = true, rush = true },
 }
 local function validSetting(k, v)
@@ -44,12 +45,12 @@ pcall(function() store = DataStoreService:GetDataStore("InterstateWeave_v2") end
 
 local cache, lastSubmit, lastSave, dirty = {}, {}, {}, {}
 
-local function blank() return { settings = {}, career = 0, wallet = 0, best = { endless = 0, stunt = 0, pursuit = 0, rush = 0 }, owned = {}, equip = {}, builds = {}, passes = {} } end
+local function blank() return { settings = {}, career = 0, wallet = 0, best = { endless = 0, stunt = 0, pursuit = 0, rush = 0 }, owned = {}, equip = {}, builds = {}, passes = {}, maps = {} } end
 local PASS_BY_ID = {}
 for key, id in pairs(Catalog.PASS_IDS) do if id ~= 0 then PASS_BY_ID[id] = key end end
 local function slotsOf(data) return Catalog.BASE_SLOTS + (data.passes.slots and Catalog.PASS_SLOTS or 0) end
 local function stateOf(data)
-	return { wallet = data.wallet, career = data.career, owned = data.owned, equip = data.equip, builds = data.builds, passes = data.passes, slots = slotsOf(data) }
+	return { wallet = data.wallet, career = data.career, owned = data.owned, equip = data.equip, builds = data.builds, passes = data.passes, maps = data.maps, slots = slotsOf(data) }
 end
 local function carOk(id) return type(id) == "string" and SETTINGS.car[id] == true end
 local function loadPlayer(plr)
@@ -61,6 +62,7 @@ local function loadPlayer(plr)
 			if type(saved.wallet) == "number" then data.wallet = math.max(0, math.floor(saved.wallet)) end
 			if type(saved.owned) == "table" then for id, v in pairs(saved.owned) do if v == true and Catalog.part(id) then data.owned[id] = true end end end
 			if type(saved.passes) == "table" then for k, v in pairs(saved.passes) do if v == true and Catalog.PASS_IDS[k] ~= nil then data.passes[k] = true end end end
+			if type(saved.maps) == "table" then for id, v in pairs(saved.maps) do if v == true and Catalog.map(id) then data.maps[id] = true end end end
 			if type(saved.equip) == "table" then for car, eq in pairs(saved.equip) do if carOk(car) and type(eq) == "table" then data.equip[car] = eq end end end
 			if type(saved.builds) == "table" then
 				for i = 1, Catalog.BASE_SLOTS + Catalog.PASS_SLOTS do
@@ -95,7 +97,7 @@ local function flush(plr)
 			old.settings = data.settings
 			old.career = math.max(tonumber(old.career) or 0, data.career)
 			old.wallet = data.wallet -- spendable points go up and down, so this one is never merged
-			old.owned, old.equip, old.builds = data.owned, data.equip, data.builds
+			old.owned, old.equip, old.builds, old.maps = data.owned, data.equip, data.builds, data.maps
 			old.passes = type(old.passes) == "table" and old.passes or {}
 			for k, v in pairs(data.passes) do old.passes[k] = v end
 			old.best = type(old.best) == "table" and old.best or {}
@@ -128,7 +130,12 @@ save.OnServerEvent:Connect(function(plr, settings)
 	local now = os.clock()
 	if lastSave[plr] and now - lastSave[plr] < 1 then return end
 	lastSave[plr] = now
-	for k, v in pairs(settings) do if validSetting(k, v) then data.settings[k] = v end end
+	for k, v in pairs(settings) do
+		if validSetting(k, v) then
+			-- a locked map cannot be saved as the chosen one (Studio is left open for testing)
+			if k ~= "map" or RunService:IsStudio() or Catalog.mapOwned(data, Catalog.map(v)) then data.settings[k] = v end
+		end
+	end
 	dirty[plr] = true
 end)
 
@@ -150,6 +157,7 @@ end)
 
 ---------------------------------------------------------------- garage: buying, equipping, builds (all checked here, never trusted from the client)
 local lastGarage = {}
+local crateRng = Random.new()
 local function reply(data, ok, msg) return ok, msg, stateOf(data) end
 garage.OnServerInvoke = function(plr, action, a, b, c)
 	local data = cache[plr]
@@ -192,6 +200,48 @@ garage.OnServerInvoke = function(plr, action, a, b, c)
 	elseif action == "deleteBuild" then
 		if type(a) == "number" and data.builds[tostring(a)] then data.builds[tostring(a)] = nil; dirty[plr] = true; queueFlush(plr) end
 		return reply(data, true, "Build deleted")
+	elseif action == "buyMap" then -- a map bought with spendable points (its Robux pass is the other way to get it)
+		local m = type(a) == "string" and Catalog.map(a)
+		if not m then return reply(data, false, "Unknown map") end
+		if Catalog.mapOwned(data, m) then return reply(data, false, "You already own it") end
+		if data.wallet < m.price then return reply(data, false, "Not enough points") end
+		data.wallet -= m.price; data.maps[m.id] = true; dirty[plr] = true; queueFlush(plr)
+		return reply(data, true, m.name .. " unlocked")
+	elseif action == "crate" then -- open a crate: paid with points, and the prize is picked here on the server
+		local cr = type(a) == "string" and Catalog.crate(a)
+		if not cr then return reply(data, false, "Unknown crate") end
+		if data.wallet < cr.price then return reply(data, false, "Not enough points") end
+		data.wallet -= cr.price
+		local roll, drop = crateRng:NextNumber() * 100, cr.drops[#cr.drops]
+		for _, d in ipairs(cr.drops) do roll -= d.w; if roll < 0 then drop = d; break end end
+		local prize = { tier = drop.tier }
+		if drop.kind == "points" then
+			prize.kind = "points"; prize.points = math.floor(crateRng:NextInteger(drop.min, drop.max) / 100 + 0.5) * 100
+		else
+			local pool = {}
+			if drop.kind == "part" then
+				for _, p in ipairs(Catalog.PARTS) do
+					if not p.robux and p.price > 0 and p.price <= drop.max and not data.owned[p.id] then pool[#pool + 1] = { kind = "part", id = p.id, name = p.name .. " (" .. Catalog.cat(p.cat).name .. ")" } end
+				end
+			elseif drop.kind == "look" then
+				for _, key in ipairs(Catalog.LOOK_PASSES) do if not data.passes[key] then pool[#pool + 1] = { kind = "pass", id = key, name = Catalog.passName(key) } end end
+			elseif drop.kind == "car" then
+				for _, key in ipairs(Catalog.CAR_PASSES) do if not data.passes[key] then pool[#pool + 1] = { kind = "pass", id = key, name = Catalog.passName(key) } end end
+			elseif drop.kind == "map" then
+				for _, m in ipairs(Catalog.MAPS) do if not Catalog.mapOwned(data, m) then pool[#pool + 1] = { kind = "map", id = m.id, name = m.name .. " (map)" } end end
+			end
+			if #pool == 0 then -- nothing left to win in this slot: points back instead
+				prize.kind = "points"; prize.points = cr.dupe; prize.dupe = true
+			else
+				local won = pool[crateRng:NextInteger(1, #pool)]
+				prize.kind, prize.id, prize.name = won.kind, won.id, won.name
+				if won.kind == "part" then data.owned[won.id] = true elseif won.kind == "pass" then data.passes[won.id] = true else data.maps[won.id] = true end
+			end
+		end
+		if prize.points then data.wallet += prize.points; prize.name = ("%d points"):format(prize.points) end
+		dirty[plr] = true; queueFlush(plr)
+		local ok, msg, st = reply(data, true, "")
+		return ok, msg, st, prize
 	elseif action == "studioGrant" then -- Studio only: lets you test a Robux item before its pass exists
 		if not RunService:IsStudio() or type(a) ~= "string" then return reply(data, false, "Not available") end
 		if a == "points" then data.wallet += 50000; data.career = math.max(data.career, 200000); dirty[plr] = true; return reply(data, true, "Studio test points") end

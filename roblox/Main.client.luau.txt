@@ -23,29 +23,44 @@ local ROAD_X1 = 19.6
 local TERRAIN = { amp = 0, bend = 0 }
 local function hillH(s) return math.sin(s * 0.0041 + 1.3) + math.sin(s * 0.0093 + 0.4) * 0.55 + math.sin(s * 0.021 + 2.1) * 0.18 end
 local function hillX(s) return math.sin(s * 0.0023 + 0.7) + math.sin(s * 0.0061 + 2.9) * 0.45 end
--- the road is built from straight 80 m segments whose ends sit ON the hill curve, so everything (cars, camera, props) must follow the
--- same straight chords. Sampling the smooth curve here instead is what let a car sink up to ~1.5 m into the road on crests.
-local function roadOff(f)
-	local k = math.floor(f / SEG_LEN)
-	local t = f / SEG_LEN - k
-	local f0, f1 = k * SEG_LEN, (k + 1) * SEG_LEN
-	local x0, x1, h0, h1 = hillX(f0), hillX(f1), hillH(f0), hillH(f1)
-	return (x0 + (x1 - x0) * t) * TERRAIN.bend, (h0 + (h1 - h0) * t) * TERRAIN.amp
+-- ROAD GEOMETRY. The road is a chain of straight, rigid 80 m segments. Everything in the game (cars, camera, ramps, props) is placed
+-- THROUGH the segment it is on, with the very same CFrame the road model itself is placed with, so nothing can disagree with the road
+-- about where its surface is. (Before, cars followed a formula while the road pieces were rotated models: on hills with curves the two
+-- drifted apart by up to half a metre, and the car sank into the road.)
+local segCF
+do
+local segNodes, segFrames, nodeLo, nodeHi, geoAmp, geoBend = {}, {}, 0, 0, nil, nil
+local function segDir(k) -- unit direction of segment k, from the hill and curve shape
+	local f0 = k * SEG_LEN
+	return Vector3.new((hillX(f0 + SEG_LEN) - hillX(f0)) * TERRAIN.bend, (hillH(f0 + SEG_LEN) - hillH(f0)) * TERRAIN.amp, -SEG_LEN).Unit
+end
+function segCF(k) -- centre of segment k's road surface, facing down the road (metres are turned into studs here)
+	if geoAmp ~= TERRAIN.amp or geoBend ~= TERRAIN.bend then -- terrain changed: start the chain again
+		geoAmp, geoBend = TERRAIN.amp, TERRAIN.bend
+		segNodes = { [0] = Vector3.new(hillX(0) * geoBend, hillH(0) * geoAmp, 0) }; segFrames = {}; nodeLo, nodeHi = 0, 0
+	end
+	local c = segFrames[k]
+	if c then return c end
+	while nodeHi < k + 1 do segNodes[nodeHi + 1] = segNodes[nodeHi] + segDir(nodeHi) * SEG_LEN; nodeHi += 1 end
+	while nodeLo > k do segNodes[nodeLo - 1] = segNodes[nodeLo] - segDir(nodeLo - 1) * SEG_LEN; nodeLo -= 1 end
+	local a, b = segNodes[k], segNodes[k + 1]
+	local mid = (a + b) / 2 * S
+	c = CFrame.lookAt(mid, mid + (b - a))
+	segFrames[k] = c
+	return c
+end
 end
 local function rnd(a, b) return a + math.random() * (b - a) end
 local function clamp(v, a, b) return math.max(a, math.min(b, v)) end
--- road coordinates (x across, y up, f along) -> world studs, following hills and curves
-local function w2v(x, y, f)
-	local ox, oy = roadOff(f)
-	return Vector3.new((x + ox) * S, (y + oy) * S, -f * S)
-end
--- a frame on the road surface at (x, y, f) that faces down the road
+-- a frame on the road at (x across, y above the surface, f along) that faces down the road
 local function roadCF(x, y, f)
-	local p = w2v(x, y, f)
-	if TERRAIN.amp == 0 and TERRAIN.bend == 0 then return CFrame.new(p) end
-	local x1, y1 = roadOff(f + 1)
-	local x0, y0 = roadOff(f - 1)
-	return CFrame.lookAt(p, p + Vector3.new((x1 - x0) / 2, (y1 - y0) / 2, -1))
+	local k = math.floor(f / SEG_LEN)
+	return segCF(k) * CFrame.new(x * S, y * S, -(f - (k + 0.5) * SEG_LEN) * S)
+end
+-- road coordinates -> world studs
+local function w2v(x, y, f)
+	local k = math.floor(f / SEG_LEN)
+	return segCF(k):PointToWorldSpace(Vector3.new(x * S, y * S, -(f - (k + 0.5) * SEG_LEN) * S))
 end
 
 ---------------------------------------------------------------- default avatar out of the way
@@ -909,6 +924,12 @@ function buildCar(kind, color, look)
 	car.root = root; car.model.PrimaryPart = root
 	BUILD[kind](car, color)
 	if look then dressCar(car, look) end
+	-- the real outer box of the finished model (half width, half length, height), used to keep every corner of it above the road
+	do
+		local bcf, bsize = car.model:GetBoundingBox()
+		local rel = root.CFrame:ToObjectSpace(bcf).Position
+		car.bw = (math.abs(rel.X) + bsize.X / 2) / S; car.bl = (math.abs(rel.Z) + bsize.Z / 2) / S; car.bt = (rel.Y + bsize.Y / 2) / S
+	end
 	car.model.Parent = world
 	if PLAYER_KINDS[kind] then
 		local beam = Instance.new("SpotLight"); beam.Face = Enum.NormalId.Front; beam.Angle = 55; beam.Range = 60; beam.Brightness = 3
@@ -955,6 +976,7 @@ local sun = Instance.new("SunRaysEffect"); sun.Intensity = 0.1; sun.Spread = 0.6
 local dof = Instance.new("DepthOfFieldEffect"); dof.FarIntensity = 0.22; dof.FocusDistance = 90; dof.InFocusRadius = 160; dof.NearIntensity = 0; dof.Parent = Lighting
 local clouds = Workspace.Terrain:FindFirstChildOfClass("Clouds") or Instance.new("Clouds")
 clouds.Parent = Workspace.Terrain
+local LIT = { atmosphere = atmosphere, sky = sky, cc = cc, bloom = bloom, sun = sun, clouds = clouds }
 rainOn = false
 todNow = "dusk"
 streetLights = {}
@@ -978,133 +1000,433 @@ function applyWeather()
 	sun.Intensity = rainOn and 0 or 0.1
 	cc.Saturation = rainOn and -0.2 or 0.12; cc.Contrast = 0.12; cc.Brightness = rainOn and -0.02 or 0.01
 	cc.TintColor = rainOn and Color3.fromRGB(214, 224, 240) or Color3.fromRGB(255, 242, 230)
+	if TERRAIN.light then TERRAIN.light(LIT, night, rainOn, todNow) end -- the current map's own sky and light
 end
 applyWeather()
 
 end
 
----------------------------------------------------------------- road, scenery
+---------------------------------------------------------------- road, scenery and maps
 local updateRoad, setWet, setDivided
 local medianParts, yellowParts
 do
 local segs = {}
 local roadParts = {}
 local rng = Random.new(7)
-local GREENS = { Color3.fromRGB(46, 84, 44), Color3.fromRGB(58, 96, 48), Color3.fromRGB(38, 70, 40), Color3.fromRGB(72, 102, 52) }
+local V, MAT = Vector3.new, Enum.Material
+local function at(x, y, z) return CFrame.new(x * S, y * S, z * S) end
+local function col(r, g, b) return Color3.fromRGB(r, g, b) end
+local function off(a, b) return (rng:NextInteger(0, 1) == 0 and -1 or 1) * rng:NextNumber(OUTER_WALL + a, OUTER_WALL + b) end
+local function rz(L) return rng:NextNumber(-L / 2 + 2, L / 2 - 2) end
+local function chance(p) return rng:NextNumber() < p end
+local function cyl(m, d, h, x, y, z, c, mat, o) -- upright cylinder, d across and h tall
+	o = o or {}; o.shape = Enum.PartType.Cylinder
+	return mk(m, V(h, d, d), at(x, y, z) * CFrame.Angles(0, 0, math.pi / 2), c, mat, o)
+end
+local function ball(m, d, x, y, z, c, mat, o)
+	o = o or {}; o.shape = Enum.PartType.Ball
+	return mk(m, V(d, d, d), at(x, y, z), c, mat, o)
+end
+local function blob(m, sx, sy, sz, x, y, z, c, o) -- squashed sphere
+	local p = mk(m, V(sx, sy, sz), at(x, y, z), c, nil, o)
+	local mesh = Instance.new("SpecialMesh"); mesh.MeshType = Enum.MeshType.Sphere; mesh.Parent = p
+	return p
+end
+
+---------------------------------------------------------------- scenery pieces
+local GREENS = { col(46, 84, 44), col(58, 96, 48), col(38, 70, 40), col(72, 102, 52) }
+local NEONS = { col(34, 211, 255), col(255, 60, 200), col(150, 90, 255), col(255, 170, 40) }
 local function tree(m, x, z, h)
 	if rng:NextNumber() < 0.45 then -- pine: trunk with stacked, shrinking canopy layers
-		mk(m, Vector3.new(0.4, h * 0.5, 0.4), CFrame.new(x * S, h * 0.25 * S, z * S), Color3.fromRGB(66, 46, 32), Enum.Material.Wood)
-		local g = Color3.fromRGB(30, 62, 40)
+		mk(m, V(0.4, h * 0.5, 0.4), at(x, h * 0.25, z), col(66, 46, 32), MAT.Wood)
+		local g = col(30, 62, 40)
 		for k = 0, 3 do
 			local r = h * (0.42 - k * 0.09)
-			mk(m, Vector3.new(r, r * 0.8, r), CFrame.new(x * S, (h * 0.35 + k * h * 0.17) * S, z * S), g, Enum.Material.Grass, { shape = Enum.PartType.Ball })
+			mk(m, V(r, r * 0.8, r), at(x, h * 0.35 + k * h * 0.17, z), g, MAT.Grass, { shape = Enum.PartType.Ball })
 		end
 	else -- broadleaf: trunk with a cluster of canopy balls
-		mk(m, Vector3.new(0.45, h * 0.6, 0.45), CFrame.new(x * S, h * 0.3 * S, z * S), Color3.fromRGB(78, 58, 40), Enum.Material.Wood)
+		mk(m, V(0.45, h * 0.6, 0.45), at(x, h * 0.3, z), col(78, 58, 40), MAT.Wood)
 		local g = GREENS[rng:NextInteger(1, #GREENS)]
 		for k = 1, 3 do
 			local r = h * rng:NextNumber(0.38, 0.5)
 			local ox, oz = rng:NextNumber(-0.25, 0.25) * h, rng:NextNumber(-0.25, 0.25) * h
-			mk(m, Vector3.new(r, r, r), CFrame.new((x + ox) * S, h * rng:NextNumber(0.68, 0.85) * S, (z + oz) * S), g:Lerp(Color3.new(0, 0, 0), rng:NextNumber(0, 0.15)), Enum.Material.Grass, { shape = Enum.PartType.Ball })
+			mk(m, V(r, r, r), at(x + ox, h * rng:NextNumber(0.68, 0.85), z + oz), g:Lerp(Color3.new(0, 0, 0), rng:NextNumber(0, 0.15)), MAT.Grass, { shape = Enum.PartType.Ball })
 		end
 	end
 end
+local function snowPine(m, x, z, h)
+	mk(m, V(0.4, h * 0.5, 0.4), at(x, h * 0.25, z), col(60, 44, 34), MAT.Wood)
+	for k = 0, 2 do
+		local r = h * (0.46 - k * 0.11)
+		local y = h * 0.36 + k * h * 0.2
+		ball(m, r, x, y, z, col(34, 66, 52), MAT.Grass)
+		if k > 0 then ball(m, r * 0.86, x, y + r * 0.2, z, col(240, 244, 250), MAT.Snow, { shadow = false }) end
+	end
+end
+local function blossom(m, x, z, h)
+	mk(m, V(0.35, h * 0.55, 0.35), at(x, h * 0.27, z), col(58, 42, 40), MAT.Wood)
+	for _ = 1, 3 do
+		local r = h * rng:NextNumber(0.34, 0.46)
+		ball(m, r, x + rng:NextNumber(-0.22, 0.22) * h, h * rng:NextNumber(0.62, 0.8), z + rng:NextNumber(-0.22, 0.22) * h, col(246, 170, 196), MAT.Grass)
+	end
+end
+local function torii(m, x, z, h, span) -- span: half-width between the posts (0 = a small roadside gate facing the road)
+	local RED, DARK = col(204, 44, 32), col(34, 30, 34)
+	local w = span > 0 and span or h * 0.42
+	for _, sx in ipairs({ -1, 1 }) do cyl(m, h * 0.085, h, x + sx * w, h / 2, z, RED) end
+	mk(m, V(w * 2 + h * 0.5, h * 0.06, h * 0.1), at(x, h * 0.8, z), RED)
+	mk(m, V(w * 2 + h * 0.75, h * 0.07, h * 0.13), at(x, h * 1.0, z), RED)
+	mk(m, V(w * 2 + h * 0.9, h * 0.05, h * 0.17), at(x, h * 1.06, z), DARK)
+end
+local function lantern(m, x, z)
+	local STONE = col(150, 152, 158)
+	mk(m, V(0.7, 0.3, 0.7), at(x, 0.15, z), STONE, MAT.Slate)
+	mk(m, V(0.28, 1.1, 0.28), at(x, 0.85, z), STONE, MAT.Slate)
+	mk(m, V(0.6, 0.5, 0.6), at(x, 1.65, z), col(255, 196, 120), MAT.Neon, { shadow = false })
+	mk(m, V(1.0, 0.22, 1.0), at(x, 2.0, z), STONE, MAT.Slate)
+	mk(m, V(1.1, 0.12, 1.1), at(x, 2.16, z), col(240, 244, 250), MAT.Snow, { shadow = false })
+end
+local function pagoda(m, x, z)
+	local y, w = 0, rng:NextNumber(9, 12)
+	for _ = 1, 4 do
+		mk(m, V(w, 3.2, w), at(x, y + 1.6, z), col(232, 226, 214))
+		mk(m, V(w + 3.4, 0.5, w + 3.4), at(x, y + 3.45, z), col(52, 46, 52))
+		mk(m, V(w + 3.0, 0.22, w + 3.0), at(x, y + 3.8, z), col(240, 244, 250), MAT.Snow, { shadow = false })
+		y += 3.9; w *= 0.8
+	end
+	cyl(m, 0.4, 5, x, y + 2.5, z, col(212, 175, 55), MAT.Metal)
+end
+local function cactus(m, x, z, h)
+	local G = col(70, 118, 66)
+	cyl(m, h * 0.17, h, x, h / 2, z, G, MAT.Grass)
+	for _, sx in ipairs({ -1, 1 }) do
+		if chance(0.75) then
+			local ay, al = h * rng:NextNumber(0.35, 0.55), h * rng:NextNumber(0.25, 0.4)
+			mk(m, V(h * 0.24, h * 0.11, h * 0.11), at(x + sx * h * 0.16, ay, z), G, MAT.Grass)
+			cyl(m, h * 0.11, al, x + sx * h * 0.28, ay + al / 2, z, G, MAT.Grass)
+		end
+	end
+end
+local function butte(m, x, z, w, h)
+	local d = w * rng:NextNumber(0.7, 1.1)
+	mk(m, V(w, h * 0.55, d), at(x, h * 0.275 - 0.3, z), col(176, 96, 62), MAT.Sandstone)
+	mk(m, V(w * 0.78, h * 0.3, d * 0.78), at(x, h * 0.7 - 0.3, z), col(190, 108, 68), MAT.Sandstone)
+	mk(m, V(w * 0.66, h * 0.15, d * 0.66), at(x, h * 0.925 - 0.3, z), col(150, 80, 56), MAT.Sandstone)
+end
+local function palm(m, x, z, h)
+	local lean = rng:NextNumber(-0.14, 0.14)
+	local base = at(x, 0, z) * CFrame.Angles(lean, rng:NextNumber(0, 6.28), lean * 0.6)
+	mk(m, V(h, 0.45, 0.45), base * CFrame.new(0, h / 2 * S, 0) * CFrame.Angles(0, 0, math.pi / 2), col(122, 96, 70), MAT.Wood, { shape = Enum.PartType.Cylinder })
+	local top = base * CFrame.new(0, h * S, 0)
+	for k = 0, 5 do
+		mk(m, V(0.9, 0.1, h * 0.42), top * CFrame.Angles(0, k * math.pi / 3, 0) * CFrame.Angles(-0.45, 0, 0) * CFrame.new(0, 0, -h * 0.2 * S), col(52, 120, 58), MAT.Grass, { shadow = false })
+	end
+end
+local function tower(m, z)
+	local w, d, h = rng:NextNumber(14, 30), rng:NextNumber(14, 30), rng:NextNumber(40, 170)
+	local x = (rng:NextInteger(0, 1) == 0 and -1 or 1) * (OUTER_WALL + w / 2 + rng:NextNumber(6, 110))
+	local c = NEONS[rng:NextInteger(1, #NEONS)]
+	mk(m, V(w, h, d), at(x, h / 2 - 0.3, z), col(18, 20, 30):Lerp(col(40, 44, 64), rng:NextNumber()), nil, { refl = 0.12 })
+	mk(m, V(w + 0.5, 1.2, d + 0.5), at(x, h * rng:NextNumber(0.3, 0.6), z), c, MAT.Neon, { shadow = false })
+	mk(m, V(w + 0.5, 0.8, d + 0.5), at(x, h - 0.6, z), c, MAT.Neon, { shadow = false })
+	mk(m, V(0.5, h * 0.8, 1.2), at(x - (x > 0 and 1 or -1) * (w / 2 + 0.2), h * 0.5, z), NEONS[rng:NextInteger(1, #NEONS)], MAT.Neon, { shadow = false })
+	if chance(0.5) then mk(m, V(0.4, h * 0.25, 0.4), at(x, h * 1.125, z), col(255, 60, 60), MAT.Neon, { shadow = false }) end
+end
+
+---------------------------------------------------------------- the maps: palette, roadside scenery, horizon and light for each one
+local THEMES = {}
+THEMES.interstate = {
+	road = col(48, 49, 52), shoulder = col(62, 62, 64), ground = col(74, 88, 54), groundMat = MAT.Grass, verge = col(104, 98, 86), vergeMat = MAT.Pebble,
+	line = col(240, 240, 232), yline = col(240, 190, 40), rail = col(176, 182, 188), post = col(120, 126, 132), barrier = col(176, 172, 164),
+	lamp = col(255, 220, 160), lampLight = col(255, 205, 150),
+	hill = { a = col(70, 92, 62), b = col(110, 120, 130), mat = MAT.Grass, mesh = Enum.MeshType.Sphere, s = V(1, 1, 1) },
+	scenery = function(m, L)
+		for _ = 1, 9 do tree(m, off(6, 70), rng:NextNumber(-L / 2, L / 2), rng:NextNumber(6, 12)) end
+		for _ = 1, 5 do
+			local r = rng:NextNumber(1, 2.2)
+			mk(m, V(r, r * 0.7, r), at(off(3, 9), r * 0.2, rng:NextNumber(-L / 2, L / 2)), GREENS[rng:NextInteger(1, #GREENS)], MAT.Grass, { shape = Enum.PartType.Ball })
+		end
+		if chance(0.5) then
+			local r = rng:NextNumber(1.5, 3.5)
+			mk(m, V(r * 1.4, r, r), at(off(8, 40), r * 0.3, rng:NextNumber(-L / 2, L / 2)) * CFrame.Angles(0, rng:NextNumber(0, 6), 0.2), col(120, 112, 104), MAT.Rock)
+		end
+	end,
+}
+THEMES.mesa = {
+	road = col(72, 64, 60), shoulder = col(96, 80, 68), ground = col(198, 150, 98), groundMat = MAT.Sand, verge = col(170, 122, 82), vergeMat = MAT.Sand,
+	line = col(236, 228, 208), yline = col(240, 190, 40), rail = col(170, 160, 150), post = col(120, 106, 96), barrier = col(190, 170, 150),
+	lamp = col(255, 214, 150), lampLight = col(255, 196, 130),
+	hill = { a = col(176, 96, 62), b = col(206, 138, 96), mat = MAT.Sandstone, mesh = Enum.MeshType.Brick, s = V(0.7, 0.9, 0.7) },
+	light = function(L)
+		L.atmosphere.Color = col(244, 196, 150); L.atmosphere.Decay = col(196, 112, 80); L.clouds.Cover = 0.22
+		L.cc.TintColor = col(255, 238, 214)
+	end,
+	scenery = function(m, L)
+		for _, z in ipairs({ -20, 20 }) do -- telephone poles
+			mk(m, V(0.28, 9, 0.28), at(OUTER_WALL + 4.5, 4.5, z), col(92, 68, 48), MAT.Wood)
+			mk(m, V(2.6, 0.18, 0.18), at(OUTER_WALL + 4.5, 8.3, z), col(92, 68, 48), MAT.Wood)
+		end
+		for _ = 1, 5 do cactus(m, off(5, 60), rz(L), rng:NextNumber(2.5, 5.5)) end
+		for _ = 1, 2 do butte(m, off(50, 160), rz(L), rng:NextNumber(18, 42), rng:NextNumber(14, 42)) end
+		for _ = 1, 5 do
+			local r = rng:NextNumber(0.8, 3)
+			mk(m, V(r * 1.3, r, r), at(off(4, 50), r * 0.25, rz(L)) * CFrame.Angles(0, rng:NextNumber(0, 6), 0.2), col(168, 104, 74), MAT.Rock)
+		end
+		for _ = 1, 4 do ball(m, rng:NextNumber(0.6, 1.3), off(3, 30), 0.2, rz(L), col(176, 160, 104), MAT.Grass, { shadow = false }) end
+	end,
+}
+THEMES.coast = {
+	road = col(56, 56, 60), shoulder = col(80, 78, 76), ground = col(226, 204, 160), groundMat = MAT.Sand, verge = col(206, 188, 150), vergeMat = MAT.Sand,
+	line = col(244, 244, 236), yline = col(240, 190, 40), rail = col(236, 236, 230), post = col(170, 170, 168), barrier = col(214, 208, 196),
+	lamp = col(255, 214, 170), lampLight = col(255, 190, 140), sea = true,
+	hill = { a = col(96, 124, 80), b = col(150, 140, 110), mat = MAT.Grass, mesh = Enum.MeshType.Sphere, s = V(1, 0.8, 1), oneSide = true },
+	light = function(L)
+		L.atmosphere.Color = col(255, 198, 162); L.atmosphere.Decay = col(232, 124, 112); L.clouds.Cover = 0.4
+		L.cc.TintColor = col(255, 236, 222); L.cc.Saturation = 0.22
+	end,
+	scenery = function(m, L)
+		for _ = 1, 5 do palm(m, rng:NextNumber(OUTER_WALL + 4, OUTER_WALL + 60), rz(L), rng:NextNumber(7, 12)) end
+		for _ = 1, 3 do -- beach umbrellas
+			local x, z, c = rng:NextNumber(OUTER_WALL + 8, OUTER_WALL + 40), rz(L), NEONS[rng:NextInteger(1, #NEONS)]
+			mk(m, V(0.1, 2.2, 0.1), at(x, 1.1, z), col(240, 240, 240))
+			blob(m, 3, 0.7, 3, x, 2.3, z, c:Lerp(Color3.new(1, 1, 1), 0.25))
+		end
+		for _ = 1, 4 do
+			local r = rng:NextNumber(1, 2.4)
+			mk(m, V(r, r * 0.7, r), at(rng:NextNumber(OUTER_WALL + 3, OUTER_WALL + 30), r * 0.2, rz(L)), GREENS[rng:NextInteger(1, #GREENS)], MAT.Grass, { shape = Enum.PartType.Ball })
+		end
+		for _ = 1, rng:NextInteger(1, 2) do -- sea stacks standing in the water, some with a lighthouse
+			local x, z, d, top = -rng:NextNumber(OUTER_WALL + 35, OUTER_WALL + 150), rz(L), rng:NextNumber(8, 18), rng:NextNumber(-1, 7)
+			cyl(m, d, 70, x, top - 35, z, col(120, 104, 92), MAT.Slate)
+			if chance(0.2) then
+				cyl(m, 3.2, 12, x, top + 6, z, col(240, 240, 236)); cyl(m, 3.3, 2.4, x, top + 7, z, col(204, 44, 32))
+				ball(m, 2.4, x, top + 13, z, col(255, 236, 170), MAT.Neon, { shadow = false })
+			end
+		end
+	end,
+}
+THEMES.yuki = {
+	road = col(58, 60, 66), shoulder = col(196, 202, 212), ground = col(236, 240, 246), groundMat = MAT.Snow, verge = col(224, 230, 238), vergeMat = MAT.Snow,
+	line = col(246, 246, 240), yline = col(244, 200, 60), rail = col(186, 192, 200), post = col(130, 136, 144), barrier = col(206, 210, 216),
+	lamp = col(255, 206, 150), lampLight = col(255, 190, 130), snow = true,
+	hill = { a = col(238, 242, 250), b = col(186, 202, 226), mat = MAT.Snow, mesh = Enum.MeshType.Sphere, s = V(0.8, 1.7, 0.8) },
+	light = function(L, night)
+		L.atmosphere.Color = col(226, 232, 244); L.atmosphere.Decay = col(150, 166, 192); L.atmosphere.Density = 0.34; L.atmosphere.Haze = 2.2
+		L.clouds.Cover = 0.86; L.clouds.Color = col(236, 238, 246)
+		L.cc.TintColor = col(232, 240, 255); L.cc.Saturation = -0.05
+		Lighting.Ambient = col(92, 98, 112); Lighting.OutdoorAmbient = night and col(110, 118, 136) or col(152, 160, 174)
+	end,
+	scenery = function(m, L)
+		for _ = 1, 7 do snowPine(m, off(6, 70), rz(L), rng:NextNumber(6, 12)) end
+		for _ = 1, 2 do blossom(m, off(5, 40), rz(L), rng:NextNumber(4, 6.5)) end
+		for _ = 1, 2 do lantern(m, off(2.2, 3.2), rz(L)) end
+		if chance(0.25) then torii(m, 0, rng:NextNumber(-25, 5), 14, OUTER_WALL + 2.6) -- a great gate over the whole road
+		elseif chance(0.4) then torii(m, off(8, 30), rz(L), rng:NextNumber(4.5, 7), 0) end
+		if chance(0.3) then pagoda(m, off(50, 120), rz(L)) end
+		for _ = 1, 3 do local r = rng:NextNumber(1.2, 3); blob(m, r * 1.5, r * 0.7, r * 1.2, off(4, 40), 0.05, rz(L), col(244, 246, 252)) end
+	end,
+}
+THEMES.neon = {
+	road = col(26, 27, 34), shoulder = col(36, 38, 48), ground = col(22, 24, 32), groundMat = MAT.Concrete, verge = col(40, 42, 54), vergeMat = MAT.Concrete,
+	line = col(170, 240, 255), lineMat = MAT.Neon, yline = col(255, 90, 210), rail = col(70, 76, 96), post = col(50, 54, 70), barrier = col(52, 56, 74),
+	lamp = col(120, 230, 255), lampLight = col(110, 210, 255), edge = { col(255, 60, 200), col(34, 211, 255) },
+	hill = { a = col(20, 22, 36), b = col(46, 40, 78), mat = MAT.SmoothPlastic, mesh = Enum.MeshType.Brick, s = V(0.22, 3, 0.3) },
+	light = function(L, night)
+		L.atmosphere.Color = col(140, 104, 220); L.atmosphere.Decay = col(52, 30, 112); L.atmosphere.Density = 0.32; L.atmosphere.Haze = 2
+		L.clouds.Cover = 0.8; L.clouds.Color = col(96, 76, 140)
+		L.cc.TintColor = col(236, 226, 255); L.cc.Saturation = 0.2; L.bloom.Intensity = 0.95
+		Lighting.Ambient = col(72, 54, 104); Lighting.OutdoorAmbient = col(96, 86, 146)
+		if not night then Lighting.Brightness = math.min(Lighting.Brightness, 1.6) end
+	end,
+	scenery = function(m, L)
+		for _ = 1, 7 do tower(m, rz(L)) end
+		do -- holo billboard
+			local sx, z = (rng:NextInteger(0, 1) == 0 and -1 or 1), rz(L)
+			local x = sx * (OUTER_WALL + 6)
+			for _, dz in ipairs({ -5, 5 }) do mk(m, V(0.35, 8, 0.35), at(x, 4, z + dz), col(50, 54, 70), MAT.Metal) end
+			mk(m, V(0.3, 5, 13), at(x, 10, z), NEONS[rng:NextInteger(1, #NEONS)], MAT.Neon, { tr = 0.2, shadow = false })
+		end
+		if chance(0.35) then -- light arch over the road
+			local z, c = rng:NextNumber(-30, 0), NEONS[rng:NextInteger(1, #NEONS)]
+			for _, sx in ipairs({ -1, 1 }) do mk(m, V(0.7, 12, 0.7), at(sx * (OUTER_WALL + 1.6), 6, z), col(50, 54, 70), MAT.Metal) end
+			mk(m, V((OUTER_WALL + 1.6) * 2, 0.5, 0.5), at(0, 12, z), c, MAT.Neon, { shadow = false })
+		end
+	end,
+}
+THEMES.lunar = {
+	road = col(66, 70, 80), roadMat = MAT.Concrete, shoulder = col(88, 92, 102), ground = col(124, 126, 132), groundMat = MAT.Slate, verge = col(108, 110, 118), vergeMat = MAT.Slate,
+	line = col(210, 240, 255), lineMat = MAT.Neon, yline = col(255, 200, 80), rail = col(196, 202, 212), post = col(150, 156, 166), barrier = col(170, 176, 186),
+	lamp = col(210, 235, 255), lampLight = col(200, 225, 255), edge = { col(120, 190, 255), col(120, 190, 255) }, earth = true,
+	hill = { a = col(124, 126, 134), b = col(92, 94, 104), mat = MAT.Slate, mesh = Enum.MeshType.Sphere, s = V(1.1, 0.6, 1.1) },
+	light = function(L, night, rain, tod)
+		-- a black sky full of stars at any hour: the clock stays at midnight, and the "time of day" only sets how hard the light is.
+		-- Midnight light is weak, so the ambient light and exposure are pushed up to keep the ground and cars clearly lit.
+		local k = tod == "day" and 1 or (night and 0.45 or 0.72)
+		Lighting.ClockTime = 0; Lighting.Brightness = 1 + 3 * k
+		L.atmosphere.Density = 0; L.atmosphere.Haze = 0; L.atmosphere.Glare = 0
+		L.clouds.Enabled = false; L.sky.StarCount = 3000; L.sun.Intensity = 0
+		L.cc.TintColor = col(236, 240, 255); L.cc.Saturation = -0.12
+		Lighting.Ambient = col(60, 62, 72):Lerp(col(124, 126, 136), k); Lighting.OutdoorAmbient = col(90, 92, 106):Lerp(col(196, 198, 210), k)
+		Lighting.ExposureCompensation = 0.4 + 0.7 * k
+	end,
+	scenery = function(m, L)
+		for _ = 1, 3 do -- craters: a pale rim with a dark floor
+			local x, z, d = off(18, 90), rz(L), rng:NextNumber(6, 22)
+			cyl(m, d * 1.25, 0.1, x, -0.22, z, col(146, 148, 156), MAT.Slate, { shadow = false })
+			cyl(m, d, 0.1, x, -0.19, z, col(84, 86, 94), MAT.Slate, { shadow = false })
+		end
+		for _ = 1, 6 do
+			local r = rng:NextNumber(0.6, 3)
+			mk(m, V(r * 1.3, r, r), at(off(4, 70), r * 0.2, rz(L)) * CFrame.Angles(0, rng:NextNumber(0, 6), 0.25), col(112, 114, 122), MAT.Rock)
+		end
+		if chance(0.5) then -- habitat dome with a glowing base ring and an airlock
+			local x, z, d = off(22, 80), rz(L), rng:NextNumber(14, 24)
+			ball(m, d, x, -0.25, z, col(226, 232, 240), nil, { refl = 0.2 })
+			cyl(m, d + 1.2, 0.5, x, 0, z, col(120, 190, 255), MAT.Neon, { shadow = false })
+			mk(m, V(4, 3, 4), at(x - (x > 0 and 1 or -1) * d / 2, 1.3, z), col(200, 206, 216), MAT.Metal)
+		end
+		if chance(0.6) then -- solar panels
+			local x, z = off(8, 40), rz(L)
+			for k = -1, 1 do
+				mk(m, V(0.2, 1.6, 0.2), at(x, 0.8, z + k * 3.4), col(150, 156, 166), MAT.Metal)
+				mk(m, V(4.2, 0.12, 2.8), at(x, 1.8, z + k * 3.4) * CFrame.Angles(0, 0, x > 0 and 0.5 or -0.5), col(30, 62, 156), nil, { refl = 0.3 })
+			end
+		end
+		if chance(0.4) then -- comms mast
+			local x, z = off(10, 60), rz(L)
+			mk(m, V(0.5, 22, 0.5), at(x, 11, z), col(170, 176, 186), MAT.Metal)
+			local dish = blob(m, 5, 1.2, 5, x, 19, z + 0.6, col(226, 232, 240)); dish.CFrame = dish.CFrame * CFrame.Angles(0.9, 0, 0)
+			ball(m, 0.7, x, 22.4, z, col(255, 60, 60), MAT.Neon, { shadow = false })
+		end
+		if chance(0.12) then -- a rocket on its pad
+			local x, z = off(60, 130), rz(L)
+			cyl(m, 14, 0.4, x, 0, z, col(90, 92, 100), MAT.Concrete)
+			cyl(m, 4, 24, x, 13, z, col(240, 240, 244)); ball(m, 4, x, 25, z, col(204, 44, 32))
+			for k = 0, 2 do mk(m, V(0.3, 5, 3), at(x, 3, z) * CFrame.Angles(0, k * 2.094, 0) * CFrame.new(0, 0, 2.6 * S), col(204, 44, 32)) end
+		end
+	end,
+}
+for id, t in pairs(THEMES) do t.id = id end
+local MAP = THEMES.interstate
+TERRAIN.map = MAP
+
 medianParts, yellowParts = {}, {}
 local function buildSegment()
+	local T = MAP
 	local m = Instance.new("Model"); m.Name = "Segment"
-	local L = SEG_LEN + 0.6 -- slight overlap hides the joins on hills and bends
-	local WHITE, YELLOW = Color3.fromRGB(240, 240, 232), Color3.fromRGB(240, 190, 40)
-	local road = mk(m, Vector3.new(ROAD_X1 * 2, 0.2, L), CFrame.new(0, -0.1 * S, 0), Color3.fromRGB(48, 49, 52), Enum.Material.Asphalt)
-	road.Name = "Road"; roadParts[#roadParts + 1] = road
+	local L = SEG_LEN + 0.2 -- a hair of overlap hides the joins; more than that would stick up as a lip on hill crests
+	local road = mk(m, V(ROAD_X1 * 2, 0.2, L), at(0, -0.1, 0), T.road, T.roadMat or MAT.Asphalt)
+	-- aprons: on bends the square ends of two segments leave a thin wedge open on the outside of the turn. These longer slabs sit well
+	-- below the surface (low enough never to poke up through the next segment on a crest) so the wedge shows road and ground, not sky.
+	mk(m, V(ROAD_X1 * 2, 0.1, SEG_LEN + 4), at(0, -0.4, 0), T.road, T.roadMat or MAT.Asphalt, { shadow = false })
+	if not T.sea then mk(m, V(420, 0.1, SEG_LEN + 8), at(0, -0.85, 0), T.ground, T.groundMat, { shadow = false }) end
+	road.Name = "Road"; road.CanQuery = true; roadParts[#roadParts + 1] = road
 	m.PrimaryPart = road
-	mk(m, Vector3.new(420, 0.3, L), CFrame.new(0, -0.4 * S, 0), Color3.fromRGB(74, 88, 54), Enum.Material.Grass)
+	if T.sea then -- land on the right only; a rock cliff drops to the sea on the left
+		local x0 = -(OUTER_WALL + 5)
+		mk(m, V(210 - x0, 0.3, L), at((210 + x0) / 2, -0.4, 0), T.ground, T.groundMat)
+		mk(m, V(2.5, 70, L), at(x0 - 1.2, -35.25, 0), col(120, 104, 92), MAT.Slate)
+	else
+		mk(m, V(420, 0.3, L), at(0, -0.4, 0), T.ground, T.groundMat)
+	end
 	for _, sx in ipairs({ -1, 1 }) do
 		-- outer shoulder, rumble strip, edge lines (white outside, yellow on the median side)
-		local sh = mk(m, Vector3.new(3.0, 0.2, L), CFrame.new(sx * 18.1 * S, -0.098 * S, 0), Color3.fromRGB(62, 62, 64), Enum.Material.Asphalt)
-		roadParts[#roadParts + 1] = sh
-		mk(m, Vector3.new(0.45, 0.025, L), CFrame.new(sx * 17.05 * S, 0.006 * S, 0), Color3.fromRGB(80, 80, 82), Enum.Material.DiamondPlate, { shadow = false })
-		mk(m, Vector3.new(0.16, 0.02, L), CFrame.new(sx * 16.6 * S, 0.008 * S, 0), WHITE, nil, { shadow = false })
-		mk(m, Vector3.new(0.14, 0.02, L), CFrame.new(sx * 1.8 * S, 0.008 * S, 0), YELLOW, nil, { shadow = false })
+		local sh = mk(m, V(3.0, 0.2, L), at(sx * 18.1, -0.098, 0), T.shoulder, T.roadMat or MAT.Asphalt)
+		sh.CanQuery = true; roadParts[#roadParts + 1] = sh
+		mk(m, V(0.45, 0.025, L), at(sx * 17.05, 0.006, 0), T.shoulder:Lerp(Color3.new(1, 1, 1), 0.1), MAT.DiamondPlate, { shadow = false })
+		mk(m, V(0.16, 0.02, L), at(sx * 16.6, 0.008, 0), T.line, T.lineMat, { shadow = false })
+		mk(m, V(0.14, 0.02, L), at(sx * 1.8, 0.008, 0), T.yline, T.lineMat, { shadow = false })
 		-- lane dashes: 3 m paint every 12 m
 		for _, lx in ipairs({ 5.5, 9.2, 12.9 }) do
 			for d = 0, SEG_LEN / 12 - 1 do
-				mk(m, Vector3.new(0.14, 0.02, 3), CFrame.new(sx * lx * S, 0.007 * S, (-SEG_LEN / 2 + 4 + d * 12) * S), WHITE, nil, { shadow = false })
+				mk(m, V(0.14, 0.02, 3), at(sx * lx, 0.007, -SEG_LEN / 2 + 4 + d * 12), T.line, T.lineMat, { shadow = false })
 			end
 		end
-		-- gravel verge, guardrail beam and posts, reflector posts
-		mk(m, Vector3.new(3, 0.25, L), CFrame.new(sx * (OUTER_WALL + 1.6) * S, -0.22 * S, 0), Color3.fromRGB(104, 98, 86), Enum.Material.Pebble)
-		mk(m, Vector3.new(0.08, 0.32, L), CFrame.new(sx * OUTER_WALL * S, 0.62 * S, 0), Color3.fromRGB(176, 182, 188), Enum.Material.DiamondPlate, { refl = 0.1 })
+		-- verge, guardrail beam and posts, reflector posts
+		mk(m, V(3, 0.25, L), at(sx * (OUTER_WALL + 1.6), -0.22, 0), T.verge, T.vergeMat)
+		mk(m, V(0.08, 0.32, L), at(sx * OUTER_WALL, 0.62, 0), T.rail, MAT.DiamondPlate, { refl = 0.1 })
+		if T.edge then mk(m, V(0.1, 0.1, L), at(sx * OUTER_WALL, 0.86, 0), T.edge[sx > 0 and 2 or 1], MAT.Neon, { shadow = false }) end
 		for z = -SEG_LEN / 2 + 2, SEG_LEN / 2, 6 do
-			mk(m, Vector3.new(0.12, 0.75, 0.12), CFrame.new(sx * (OUTER_WALL + 0.12) * S, 0.37 * S, z * S), Color3.fromRGB(120, 126, 132), Enum.Material.Metal)
+			mk(m, V(0.12, 0.75, 0.12), at(sx * (OUTER_WALL + 0.12), 0.37, z), T.post, MAT.Metal)
 		end
-		mk(m, Vector3.new(0.1, 0.9, 0.1), CFrame.new(sx * (OUTER_WALL + 0.9) * S, 0.45 * S, 0), Color3.fromRGB(235, 235, 230), Enum.Material.SmoothPlastic)
-		mk(m, Vector3.new(0.11, 0.12, 0.11), CFrame.new(sx * (OUTER_WALL + 0.9) * S, 0.8 * S, 0), sx > 0 and Color3.fromRGB(255, 150, 40) or Color3.fromRGB(240, 240, 240), Enum.Material.Neon, { shadow = false })
+		mk(m, V(0.1, 0.9, 0.1), at(sx * (OUTER_WALL + 0.9), 0.45, 0), col(235, 235, 230))
+		mk(m, V(0.11, 0.12, 0.11), at(sx * (OUTER_WALL + 0.9), 0.8, 0), sx > 0 and col(255, 150, 40) or col(240, 240, 240), MAT.Neon, { shadow = false })
 	end
 	-- median: concrete barrier (divided) or double yellow lines (two-way)
-	local mb = mk(m, Vector3.new(0.62, 0.32, L), CFrame.new(0, 0.16 * S, 0), Color3.fromRGB(176, 172, 164), Enum.Material.Concrete)
-	local mt = mk(m, Vector3.new(0.24, 0.55, L), CFrame.new(0, 0.58 * S, 0), Color3.fromRGB(184, 180, 172), Enum.Material.Concrete)
+	local mb = mk(m, V(0.62, 0.32, L), at(0, 0.16, 0), T.barrier, MAT.Concrete)
+	local mt = mk(m, V(0.24, 0.55, L), at(0, 0.58, 0), T.barrier:Lerp(Color3.new(1, 1, 1), 0.06), MAT.Concrete)
 	medianParts[#medianParts + 1] = mb; medianParts[#medianParts + 1] = mt
 	for _, sx in ipairs({ -1, 1 }) do
-		local y = mk(m, Vector3.new(0.12, 0.02, L), CFrame.new(sx * 0.14 * S, 0.008 * S, 0), YELLOW, nil, { shadow = false })
+		local y = mk(m, V(0.12, 0.02, L), at(sx * 0.14, 0.008, 0), T.yline, T.lineMat, { shadow = false })
 		yellowParts[#yellowParts + 1] = y
 	end
 	-- street lights on the median, double-armed
 	local lz = 20
-	mk(m, Vector3.new(0.25, 10, 0.25), CFrame.new(0, 5 * S, lz * S), Color3.fromRGB(84, 88, 94), Enum.Material.Metal).Name = "Pole"
+	mk(m, V(0.25, 10, 0.25), at(0, 5, lz), col(84, 88, 94), MAT.Metal).Name = "Pole"
 	for _, sx in ipairs({ -1, 1 }) do
-		mk(m, Vector3.new(3.4, 0.18, 0.18), CFrame.new(sx * 1.6 * S, 10 * S, lz * S), Color3.fromRGB(84, 88, 94), Enum.Material.Metal)
-		local head = mk(m, Vector3.new(0.9, 0.18, 0.45), CFrame.new(sx * 3.2 * S, 9.9 * S, lz * S), Color3.fromRGB(255, 220, 160), Enum.Material.Neon, { shadow = false })
-		local sl = Instance.new("SpotLight"); sl.Face = Enum.NormalId.Bottom; sl.Angle = 120; sl.Range = 48; sl.Brightness = 2.2; sl.Color = Color3.fromRGB(255, 205, 150); sl.Parent = head
+		mk(m, V(3.4, 0.18, 0.18), at(sx * 1.6, 10, lz), col(84, 88, 94), MAT.Metal)
+		local head = mk(m, V(0.9, 0.18, 0.45), at(sx * 3.2, 9.9, lz), T.lamp, MAT.Neon, { shadow = false })
+		local sl = Instance.new("SpotLight"); sl.Face = Enum.NormalId.Bottom; sl.Angle = 120; sl.Range = 48; sl.Brightness = 2.2; sl.Color = T.lampLight; sl.Parent = head
 		streetLights[#streetLights + 1] = sl
 	end
-	-- trees, bushes and rocks beyond the guardrails
-	for _ = 1, 9 do
-		local side = rng:NextInteger(0, 1) == 0 and -1 or 1
-		tree(m, side * rng:NextNumber(OUTER_WALL + 6, OUTER_WALL + 70), rng:NextNumber(-L / 2, L / 2), rng:NextNumber(6, 12))
-	end
-	for _ = 1, 5 do
-		local side = rng:NextInteger(0, 1) == 0 and -1 or 1
-		local r = rng:NextNumber(1, 2.2)
-		mk(m, Vector3.new(r, r * 0.7, r), CFrame.new(side * rng:NextNumber(OUTER_WALL + 3, OUTER_WALL + 9) * S, r * 0.2 * S, rng:NextNumber(-L / 2, L / 2) * S), GREENS[rng:NextInteger(1, #GREENS)], Enum.Material.Grass, { shape = Enum.PartType.Ball })
-	end
-	if rng:NextNumber() < 0.5 then
-		local side = rng:NextInteger(0, 1) == 0 and -1 or 1
-		local r = rng:NextNumber(1.5, 3.5)
-		mk(m, Vector3.new(r * 1.4, r, r), CFrame.new(side * rng:NextNumber(OUTER_WALL + 8, OUTER_WALL + 40) * S, r * 0.3 * S, rng:NextNumber(-L / 2, L / 2) * S) * CFrame.Angles(0, rng:NextNumber(0, 6), 0.2), Color3.fromRGB(120, 112, 104), Enum.Material.Rock)
-	end
+	T.scenery(m, L)
 	m.Parent = world
 	return m
 end
 
--- distant hills: huge squashed spheres that ride along with the camera so the horizon never runs out
+-- horizon: huge shapes that ride along with the camera so it never runs out (hills, mesas, snowy peaks or far-off towers, by map)
 local hills = {}
 for i = 1, 16 do
 	local p = Instance.new("Part"); p.Anchored = true; p.CanCollide = false; p.CanQuery = false; p.CanTouch = false; p.CastShadow = false
-	p.Size = Vector3.new(4, 4, 4); p.Material = Enum.Material.Grass
-	p.Color = Color3.fromRGB(70, 92, 62):Lerp(Color3.fromRGB(110, 120, 130), (i % 4) / 6)
+	p.Size = Vector3.new(4, 4, 4)
 	local mesh = Instance.new("SpecialMesh"); mesh.MeshType = Enum.MeshType.Sphere
 	local w = rng:NextNumber(180, 340)
-	mesh.Scale = Vector3.new(w, rng:NextNumber(45, 110), w * rng:NextNumber(0.6, 1)) * S / 4
+	local scale = Vector3.new(w, rng:NextNumber(45, 110), w * rng:NextNumber(0.6, 1)) * S / 4
 	mesh.Parent = p
 	p.Parent = world
 	local side = i % 2 == 0 and -1 or 1
-	hills[i] = { part = p, x = side * rng:NextNumber(260, 520), z = (i - 8) * 120 + rng:NextNumber(-40, 40) }
+	hills[i] = { part = p, mesh = mesh, scale = scale, x = side * rng:NextNumber(260, 520), z = (i - 8) * 120 + rng:NextNumber(-40, 40) }
 end
+local function styleHills()
+	local H = MAP.hill
+	for i, h in ipairs(hills) do
+		h.part.Color = H.a:Lerp(H.b, (i % 4) / 6); h.part.Material = H.mat
+		h.mesh.MeshType = H.mesh; h.mesh.Scale = h.scale * H.s
+		h.part.Transparency = (H.oneSide and h.x < 0) and 1 or 0
+	end
+end
+styleHills()
+-- the sea (Sunset Coast) and the Earth (Lunar Loop) stay level and follow the car
+local seaParts, earth = {}, nil
+for i = 0, 8 do
+	local p = Instance.new("Part"); p.Anchored = true; p.CanCollide = false; p.CanQuery = false; p.CanTouch = false; p.CastShadow = false
+	p.Size = Vector3.new(2040, 1, 2040); p.Color = col(22, 104, 156); p.Material = MAT.SmoothPlastic; p.Reflectance = 0.28
+	p.TopSurface = Enum.SurfaceType.Smooth; p.Transparency = 1; p.Parent = world
+	seaParts[i + 1] = { part = p, dx = (i % 3 - 2) * 2040 + 600, dz = (math.floor(i / 3) - 1) * 2040 - 1500 }
+end
+earth = Instance.new("Part"); earth.Anchored = true; earth.CanCollide = false; earth.CanQuery = false; earth.CanTouch = false; earth.CastShadow = false
+earth.Shape = Enum.PartType.Ball; earth.Size = Vector3.new(900, 900, 900); earth.Color = col(64, 132, 236); earth.Material = MAT.Neon
+earth.Transparency = 1; earth.Parent = world
 local function updateHills(f)
 	for _, h in ipairs(hills) do
 		local z = h.z - (f * 0.15) % 1920 -- slow parallax drift
 		if z < -960 then z += 1920 end
-		local ff = f + z + 700
-		local ox, oy = roadOff(ff)
-		h.part.CFrame = CFrame.new((h.x + ox) * S, (oy - 6) * S, -ff * S)
+		h.part.CFrame = CFrame.new(w2v(h.x, -6, f + z + 700))
 	end
+	local c = w2v(0, 0, f)
+	if MAP.sea then
+		local y = -(TERRAIN.amp * 1.9 + 3) * S
+		for _, s in ipairs(seaParts) do s.part.CFrame = CFrame.new(c.X + s.dx, y, c.Z + s.dz) end
+	end
+	if MAP.earth then earth.CFrame = CFrame.new(c + Vector3.new(2100, 1500, -5200)) end
 end
-for i = 1, SEG_COUNT do segs[i] = { model = buildSegment(), k = i - 1 } end
-local function placeSegment(s, k) s.k = k; s.model:PivotTo(roadCF(0, 0, (k + 0.5) * SEG_LEN)) end
-for i, s in ipairs(segs) do placeSegment(s, i - 4) end
+local function placeSegment(s, k)
+	s.k = k
+	s.model:PivotTo(segCF(k) * CFrame.new(0, -0.1 * S, 0)) -- the pivot is the middle of the 0.2 m road slab, so its TOP is exactly the surface cars sit on
+end
+for i = 1, SEG_COUNT do segs[i] = { model = buildSegment() } end
 local terrainKey = ""
 function updateRoad(f)
-	updateHills(f)
 	local key = TERRAIN.amp .. "/" .. TERRAIN.bend
 	if key ~= terrainKey then terrainKey = key; for _, s in ipairs(segs) do s.k = nil end end -- terrain changed: re-place everything
 	local base = math.floor(f / SEG_LEN) - 3
@@ -1112,6 +1434,7 @@ function updateRoad(f)
 		local k = base + ((i - 1 - base) % SEG_COUNT)
 		if s.k ~= k then placeSegment(s, k) end
 	end
+	updateHills(f)
 end
 function setDivided(on)
 	for _, p in ipairs(medianParts) do p.Transparency = on and 0 or 1 end
@@ -1120,9 +1443,54 @@ end
 function setWet(on)
 	for i, r in ipairs(roadParts) do
 		r.Reflectance = on and 0.22 or 0
-		local base = r.Name == "Road" and Color3.fromRGB(48, 49, 52) or Color3.fromRGB(62, 62, 64)
+		local base = r.Name == "Road" and MAP.road or MAP.shoulder
 		r.Color = on and base:Lerp(Color3.new(0, 0, 0), 0.3) or base
 	end
+end
+-- switch map: rebuild the 20 road segments in the new style (callers re-apply weather, wet road and the median afterwards)
+TERRAIN.setMap = function(id)
+	local T = THEMES[id] or THEMES.interstate
+	if T == MAP then return false end
+	MAP = T; TERRAIN.map = T
+	for _, s in ipairs(segs) do s.model:Destroy() end
+	table.clear(segs); table.clear(roadParts); table.clear(medianParts); table.clear(yellowParts); table.clear(streetLights)
+	rng = Random.new(7)
+	for i = 1, SEG_COUNT do segs[i] = { model = buildSegment() } end
+	styleHills()
+	for _, s in ipairs(seaParts) do s.part.Transparency = T.sea and 0 or 1 end
+	earth.Transparency = T.earth and 0 or 1
+	return true
+end
+-- each map's own light, applied on top of the time of day and weather
+TERRAIN.light = function(L, night, rain, tod)
+	L.clouds.Enabled = true; L.sky.StarCount = 1500; L.bloom.Intensity = 0.55
+	if MAP.light then MAP.light(L, night, rain, tod) end
+end
+-- THE LAST WORD ON "NEVER UNDER THE ROAD": lower the car's whole outer box onto the real road parts (an exact box-against-box test done
+-- by the engine) and lift the car if any part of it would be touching or below them.
+local castParams = RaycastParams.new(); castParams.FilterType = Enum.RaycastFilterType.Include
+local castFor = nil
+TERRAIN.settle = function(car)
+	if castFor ~= segs[1] then castFor = segs[1]; castParams.FilterDescendantsInstances = roadParts end -- the road was rebuilt
+	local cf, RISE = car.root.CFrame, 14
+	local size = Vector3.new(car.bw * 2, car.bt, car.bl * 2) * S
+	local hit = Workspace:Blockcast(cf * CFrame.new(0, car.bt / 2 * S, 0) + Vector3.new(0, RISE, 0), size, Vector3.new(0, -RISE * 2, 0), castParams)
+	if hit and hit.Distance < RISE + 0.05 then car.root.CFrame = cf + Vector3.new(0, RISE + 0.05 - hit.Distance, 0) end
+end
+-- Studio check: how far the lowest corner of a car's outer box is above (+) or below (-) the real road parts, in metres
+TERRAIN.clearance = function(car)
+	local params = RaycastParams.new(); params.FilterType = Enum.RaycastFilterType.Include; params.FilterDescendantsInstances = roadParts
+	local cf, low = car.root.CFrame, math.huge
+	for _, sx in ipairs({ -1, -0.5, 0, 0.5, 1 }) do
+		for _, sz in ipairs({ -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1 }) do
+			for _, sy in ipairs({ 0, 1 }) do
+				local p = cf:PointToWorldSpace(Vector3.new(sx * car.bw, sy * car.bt, sz * car.bl) * S)
+				local hit = Workspace:Raycast(p + Vector3.new(0, 200, 0), Vector3.new(0, -600, 0), params)
+				if hit then low = math.min(low, (p.Y - hit.Position.Y) / S) end
+			end
+		end
+	end
+	return low
 end
 
 -- rain: an emitter that follows the camera and leans back with speed
@@ -1136,6 +1504,15 @@ rain.Speed = NumberRange.new(150, 170); rain.Size = NumberSequence.new(0.55); ra
 rain.Color = ColorSequence.new(Color3.fromRGB(215, 228, 245)); rain.LightEmission = 0.7
 rain.Orientation = Enum.ParticleOrientation.VelocityParallel; rain.Squash = NumberSequence.new(-3)
 rain.LockedToPart = true; rain.Parent = rainPart
+do -- snow for the snowy map: same emitter box as the rain, slower and softer
+	local snow = Instance.new("ParticleEmitter")
+	snow.Rate = 0; snow.Lifetime = NumberRange.new(1.6, 2.4); snow.EmissionDirection = Enum.NormalId.Bottom
+	snow.Speed = NumberRange.new(26, 40); snow.SpreadAngle = Vector2.new(18, 18); snow.Size = NumberSequence.new(0.22, 0.34)
+	snow.Transparency = NumberSequence.new(0.15); snow.Color = ColorSequence.new(Color3.fromRGB(250, 252, 255)); snow.LightEmission = 0.5
+	snow.Rotation = NumberRange.new(0, 360); snow.RotSpeed = NumberRange.new(-90, 90); snow.Brightness = 2
+	snow.LockedToPart = true; snow.Parent = rainPart
+	TERRAIN.snow = snow
+end
 
 ---------------------------------------------------------------- sound
 -- rbxasset:// sounds ship with every Roblox client. Paste a Creator Store audio id (e.g. "rbxassetid://123")
@@ -1177,9 +1554,9 @@ end
 local GAR = {}
 local SET = { steer = 1.0, autoCenter = false, rewindFx = true, motionBlur = "light", swipeSafe = false, sfx = 0.8, muted = false,
 	diff = "normal", traffic = 1, weather = "clear", tod = "dusk", paint = 1, car = "vanta", mode = "endless",
-	divided = true, terrain = "flat", track = "night", music = 0.7, tutorialDone = false }
+	divided = true, terrain = "flat", track = "night", music = 0.7, tutorialDone = false, map = "interstate" }
 local MD = {} -- oncoming traffic, Pursuit and Rush hour (filled in further down)
-local PROG = { career = 0, wallet = 0, owned = {}, equip = {}, builds = {}, passes = {}, slots = 3, best = { endless = 0, stunt = 0, pursuit = 0, rush = 0 } }
+local PROG = { career = 0, wallet = 0, owned = {}, equip = {}, builds = {}, passes = {}, maps = {}, slots = 3, best = { endless = 0, stunt = 0, pursuit = 0, rush = 0 } }
 local DIFFS = {
 	easy = { traffic = 0.8, speed = 0.92, lane = 0.8, dmg = 0.14, drain = 0.65, cop = 0.92, info = "Lighter, slower traffic. Scrapes barely dent you (about 8 to wreck)." },
 	normal = { traffic = 1, speed = 1, lane = 1, dmg = 0.25, drain = 1, cop = 1, info = "The standard mix. Around four side-swipes and the car is done." },
@@ -1212,6 +1589,7 @@ local function lookFor(id) return previewEq or CATALOG.clean(PROG, PROG.equip[id
 -- TEMP: unlock every car while testing (Studio only; set to false to restore progression)
 local TEST_UNLOCK_ALL = true
 local function unlocked(c) if TEST_UNLOCK_ALL and game:GetService("RunService"):IsStudio() then return true end if c.robux then return PROG.passes[c.robux] == true end return c.unlock <= PROG.career end
+GAR.mapOwned = function(m) if TEST_UNLOCK_ALL and game:GetService("RunService"):IsStudio() then return true end return CATALOG.mapOwned(PROG, m) end
 local function paceMult(mph) return mph < 65 and 0.5 or mph < 90 and 1 or mph < 120 and 2 or mph < 160 and 3 or mph < 220 and 4 or 5 end
 local function damp(a, b, k, dt) return b + (a - b) * math.exp(-k * dt) end
 local function sgn(x) return x > 0 and 1 or x < 0 and -1 or 0 end
@@ -1662,6 +2040,38 @@ text(M, { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Te
 local function field(parent) local f = frame(parent, { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y }); vlist(f, 8); return f end
 local refreshers = {}
 
+-- map: owned maps switch at once; locked ones are bought with points here (click twice) or with Robux in the garage shop
+local fMap = field(M); local _, mapPts = fieldLabel(fMap, "Map", "")
+local mapGrid = frame(fMap, { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y })
+local mgl = Instance.new("UIGridLayout"); mgl.CellSize = UDim2.new(1 / 3, -4, 0, 48); mgl.CellPadding = UDim2.fromOffset(6, 6); mgl.SortOrder = Enum.SortOrder.LayoutOrder; mgl.Parent = mapGrid
+local mapBtns, mapArmed, mapArmedAt = {}, nil, 0
+local function refreshMaps()
+	mapPts.Text = commas(PROG.wallet) .. " pts to spend"
+	for _, e in ipairs(mapBtns) do
+		local on, ok = e.m.id == SET.map, GAR.mapOwned(e.m)
+		e.b.BackgroundTransparency = on and 0 or 1; e.name.TextColor3 = on and C_DEEP or C_PAPER; e.sub.TextColor3 = on and C_DEEP or C_SOFT
+		e.st.Transparency = on and 0 or 0.6
+		e.sub.Text = ok and e.m.tag or ("🔒 %s pts or R$"):format(commas(e.m.price))
+	end
+end
+for _, mp in ipairs(CATALOG.MAPS) do
+	local b = btn(mapGrid, { BackgroundColor3 = C_PAPER, Text = "" })
+	corner(b, 8); local st = stroke(b, C_PAPER, 2, 0.6); pad(b, 6, 9)
+	local nm = text(b, { Size = UDim2.new(1, 0, 0, 17), Text = mp.name, TextSize = 14, Font = F_BLACK })
+	local sub = text(b, { Size = UDim2.new(1, 0, 0, 13), Position = UDim2.fromOffset(0, 19), Text = "", TextSize = 10, Font = F_MONO })
+	mapBtns[#mapBtns + 1] = { b = b, m = mp, name = nm, sub = sub, st = st }
+	b.MouseButton1Click:Connect(function()
+		if GAR.mapOwned(mp) then play("tick", 0.3, 1.3); SET.map = mp.id; applyTod(); refreshMaps(); saveSettings(); return end
+		if PROG.wallet < mp.price then popup("LOCKED", ("Earn %s more points, or get it with Robux in Garage > Shop"):format(commas(mp.price - PROG.wallet))); return end
+		if mapArmed ~= mp.id or os.clock() - mapArmedAt > 5 then
+			mapArmed = mp.id; mapArmedAt = os.clock()
+			popup("BUY " .. string.upper(mp.name) .. "?", ("Click it again to spend %s points"):format(commas(mp.price))); return
+		end
+		mapArmed = nil; GAR.buyMap(mp)
+	end)
+end
+refreshers[#refreshers + 1] = refreshMaps
+
 -- time of day
 local fTod = field(M); fieldLabel(fTod, "Time of day")
 local _, rTod = seg(fTod, { { "day", "Day" }, { "dusk", "Dusk" }, { "night", "Night" } }, function() return SET.tod end, function(v) SET.tod = v; applyTod(); saveSettings() end)
@@ -1931,7 +2341,7 @@ local function __build_garage()
 
 	-- tabs
 	local renderContent
-	local _, rTab = seg(panel, { { "parts", "Parts" }, { "builds", "Builds" }, { "shop", "Shop" } }, function() return tab end, function(v) tab = v; selPart = nil; previewEq = nil; showCar(); renderContent() end)
+	local _, rTab = seg(panel, { { "parts", "Parts" }, { "builds", "Builds" }, { "shop", "Shop" }, { "crates", "Crates" } }, function() return tab end, function(v) tab = v; selPart = nil; previewEq = nil; showCar(); renderContent() end)
 
 	-- scrolling content
 	local content = Instance.new("ScrollingFrame"); content.BackgroundTransparency = 1; content.BorderSizePixel = 0
@@ -1951,6 +2361,7 @@ local function __build_garage()
 		if type(st.equip) == "table" then PROG.equip = st.equip end
 		if type(st.builds) == "table" then PROG.builds = st.builds end
 		if type(st.passes) == "table" then PROG.passes = st.passes end
+		if type(st.maps) == "table" then PROG.maps = st.maps end
 		if type(st.slots) == "number" then PROG.slots = st.slots end
 	end
 	GAR.apply = function(st) applyState(st); CUR = carDef(SET.car) end
@@ -2149,7 +2560,7 @@ local function __build_garage()
 	local function renderShop()
 		text(content, { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Text = "Robux only buys looks, convenience and boosts. Speed and handling parts can only be earned with points, so the leaderboard stays fair.", TextWrapped = true, TextSize = 12, Font = F_MONO, TextColor3 = C_SOFT })
 		for _, ps in ipairs(CATALOG.PASSES) do
-			local owned = PROG.passes[ps.key] == true
+			local owned = PROG.passes[ps.key] == true or (ps.kind == "map" and CATALOG.mapOwned(PROG, CATALOG.map(ps.key:sub(5))))
 			local row = frame(content, { Size = UDim2.new(1, 0, 0, 92), BackgroundTransparency = 0.72, BackgroundColor3 = Color3.new(0, 0, 0) }); corner(row, 9)
 			text(row, { Size = UDim2.new(1, -140, 0, 20), Position = UDim2.fromOffset(10, 8), Text = ps.name, TextSize = 15, Font = F_BLACK })
 			text(row, { Size = UDim2.new(1, -140, 0, 12), Position = UDim2.fromOffset(10, 28), Text = string.upper(ps.kind), TextSize = 10, Font = F_BLACK, TextColor3 = C_AMBER })
@@ -2165,10 +2576,74 @@ local function __build_garage()
 		end
 	end
 
+	---------------------------------------------------------------- crates: bought with points, the server picks the prize, every chance is shown
+	local reveal = frame(O, { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 0.3, BackgroundColor3 = Color3.fromRGB(5, 8, 11), Visible = false, ZIndex = 20, Active = true })
+	local rvCard = frame(reveal, { Size = UDim2.fromOffset(540, 260), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), BackgroundTransparency = 0, BackgroundColor3 = C_PANEL })
+	corner(rvCard, 16); local rvStroke = stroke(rvCard, C_AMBER, 3)
+	local CEN = Enum.TextXAlignment.Center
+	local rvTitle = text(rvCard, { Size = UDim2.new(1, 0, 0, 22), Position = UDim2.fromOffset(0, 18), Text = "", TextSize = 15, Font = F_BLACK, TextColor3 = C_SOFT, TextXAlignment = CEN })
+	local rvTier = text(rvCard, { Size = UDim2.new(1, 0, 0, 18), Position = UDim2.fromOffset(0, 48), Text = "", TextSize = 13, Font = F_BLACK, TextXAlignment = CEN })
+	local rvName = text(rvCard, { Size = UDim2.new(1, -40, 0, 64), Position = UDim2.fromOffset(20, 70), Text = "", TextSize = 26, Font = F_BLACK, TextWrapped = true, TextXAlignment = CEN })
+	local rvSub = text(rvCard, { Size = UDim2.new(1, -40, 0, 34), Position = UDim2.fromOffset(20, 140), Text = "", TextSize = 12, Font = F_MONO, TextColor3 = C_SOFT, TextWrapped = true, TextXAlignment = CEN })
+	local rvBtns = frame(rvCard, { Size = UDim2.new(1, -40, 0, 44), Position = UDim2.new(0, 20, 1, -62), Visible = false })
+	local opening, lastCrate = false, nil
+	local function openCrate(cr)
+		if opening then return end
+		if PROG.wallet < cr.price then popup("NOT ENOUGH POINTS", ("Earn %s more by driving"):format(commas(cr.price - PROG.wallet))); return end
+		opening = true; lastCrate = cr
+		reveal.Visible = true; rvBtns.Visible = false; rvStroke.Color = C_AMBER
+		rvTitle.Text = string.upper(cr.name) .. "  ·  " .. commas(cr.price) .. " PTS"; rvTier.Text = ""; rvSub.Text = "Opening..."
+		task.spawn(function()
+			local done, ok, msg, prize = false, false, nil, nil
+			task.spawn(function() local a, b, _, d = call("crate", cr.id); ok, msg, prize = a, b, d; done = true end)
+			local i = 0
+			while (not done or i < 26) and i < 400 do -- the reel: flick through the possible prizes, slowing down
+				i += 1
+				local d = cr.drops[math.random(1, #cr.drops)]
+				rvName.Text = d.label; rvName.TextColor3 = CATALOG.TIERS[d.tier].c
+				play("tick", 0.25, 0.9 + (i % 5) * 0.08)
+				task.wait(0.045 + math.min(i, 26) * 0.007)
+			end
+			opening = false
+			if not ok or type(prize) ~= "table" then
+				reveal.Visible = false; popup("CRATE NOT OPENED", msg or "Try again"); renderAll(); return
+			end
+			local tier = CATALOG.TIERS[prize.tier] or CATALOG.TIERS.common
+			rvTier.Text = string.upper(tier.name); rvTier.TextColor3 = tier.c; rvStroke.Color = tier.c
+			rvName.Text = string.upper(tostring(prize.name or "?")); rvName.TextColor3 = tier.c
+			rvSub.Text = prize.dupe and "You already own everything that slot can give, so you get points back instead."
+				or (prize.kind == "points" and "Added to your points." or "It is yours now. Look for it in the garage or on the menu.")
+			play("pickup", 0.8, (prize.tier == "legendary" or prize.tier == "epic") and 1.5 or 1)
+			rvBtns.Visible = true
+			CUR = carDef(SET.car); renderAll()
+		end)
+	end
+	local againB = btn(rvBtns, { Size = UDim2.new(0.5, -5, 1, 0), Text = "OPEN ANOTHER", TextSize = 14, BackgroundTransparency = 0, BackgroundColor3 = C_AMBER, TextColor3 = C_INK }, function() if lastCrate then openCrate(lastCrate) end end)
+	corner(againB, 8)
+	local doneB = btn(rvBtns, { Size = UDim2.new(0.5, -5, 1, 0), Position = UDim2.new(0.5, 5, 0, 0), Text = "DONE", TextSize = 14, BackgroundTransparency = 1 }, function() reveal.Visible = false end)
+	corner(doneB, 8); stroke(doneB, C_PAPER, 2, 0.5)
+	local function renderCrates()
+		text(content, { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Text = "Crates cost points, never Robux. The prize is picked by the server, and these are the exact chances.", TextWrapped = true, TextSize = 12, Font = F_MONO, TextColor3 = C_SOFT })
+		for _, cr in ipairs(CATALOG.CRATES) do
+			local can = PROG.wallet >= cr.price
+			local row = frame(content, { Size = UDim2.new(1, 0, 0, 70 + #cr.drops * 17), BackgroundTransparency = 0.72, BackgroundColor3 = Color3.new(0, 0, 0) }); corner(row, 9)
+			text(row, { Size = UDim2.new(1, -140, 0, 20), Position = UDim2.fromOffset(10, 8), Text = cr.name, TextSize = 15, Font = F_BLACK })
+			text(row, { Size = UDim2.new(1, -140, 0, 28), Position = UDim2.fromOffset(10, 29), Text = cr.desc, TextSize = 11, Font = F_MONO, TextColor3 = C_SOFT, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top })
+			pill(row, { Size = UDim2.fromOffset(118, 34), Position = UDim2.new(1, -126, 0, 10), Text = "OPEN · " .. kfmt(cr.price), TextSize = 12, BackgroundTransparency = can and 0 or 0.85,
+				BackgroundColor3 = can and C_AMBER or Color3.new(1, 1, 1), TextColor3 = can and C_INK or C_SOFT }, function() openCrate(cr) end)
+			for i, d in ipairs(cr.drops) do
+				local y = 62 + (i - 1) * 17
+				text(row, { Size = UDim2.fromOffset(40, 15), Position = UDim2.fromOffset(10, y), Text = d.w .. "%", TextSize = 12, Font = F_MONO, TextColor3 = CATALOG.TIERS[d.tier].c })
+				text(row, { Size = UDim2.new(1, -62, 0, 15), Position = UDim2.fromOffset(52, y), Text = d.label, TextSize = 11, Font = F_MONO, TextColor3 = C_SOFT, TextTruncate = Enum.TextTruncate.AtEnd })
+			end
+		end
+		text(content, { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Text = "Already own everything a prize could be? You get points back instead: 1,800 (Street), 7,500 (Pro) or 30,000 (Legend).", TextWrapped = true, TextSize = 11, Font = F_MONO, TextColor3 = C_SOFT })
+	end
+
 	renderContent = function()
 		clear()
 		local cand
-		if tab == "parts" then cand = renderParts() elseif tab == "builds" then renderBuilds() else renderShop() end
+		if tab == "parts" then cand = renderParts() elseif tab == "builds" then renderBuilds() elseif tab == "crates" then renderCrates() else renderShop() end
 		renderStats(cand)
 	end
 	renderAll = function()
@@ -2211,6 +2686,14 @@ local function __build_garage()
 	GAR.sel = function(id) local p = CATALOG.part(id); if p then catSel = p.cat; tab = "parts"; select(p) end end
 	GAR.tab = function(t) tab = t; selPart = nil; previewEq = nil; showCar(); renderAll() end
 	GAR.give = function() task.spawn(function() call("studioGrant", "points"); renderAll() end) end
+	GAR.crate = function(id) local cr = CATALOG.crate(id); if cr then openCrate(cr) end end
+	GAR.buyMap = function(mp)
+		task.spawn(function()
+			local ok, msg = call("buyMap", mp.id)
+			if ok then popup("MAP UNLOCKED", mp.name); SET.map = mp.id; applyTod(); saveSettings() else popup("CAN'T BUY", msg or "") end
+			refreshMenu()
+		end)
+	end
 
 	-- the colour-shift paint cycles through every hue
 	RunService.Heartbeat:Connect(function()
@@ -2673,17 +3156,39 @@ end
 
 ---------------------------------------------------------------- per-frame helpers
 function poseCar(car, x, f, yaw, roll, y, pitch)
-	-- tilt about the middle of the car (not the tyres) and lift it so a flipped or tipped car rests ON the road, never in it
-	roll = roll or 0; pitch = pitch or 0
-	local hc = 0.75
-	local lift = math.max(0, car.W / 2 - hc) * math.abs(math.sin(roll)) + math.max(0, car.L / 2 - hc) * math.abs(math.sin(pitch))
-	-- never below the road: where the road bends (segment joints) the nose or tail can dip under the tilted plane, so lift by the worst gap
-	local hl = car.L / 2
-	local _, yc = roadOff(f); local _, yp = roadOff(f + 1); local _, ym = roadOff(f - 1)
-	local _, yf = roadOff(f + hl); local _, yr = roadOff(f - hl)
-	local sl = (yp - ym) / 2
-	lift += math.max(0, yf - (yc + sl * hl), yr - (yc - sl * hl)) + 0.02
-	car.root.CFrame = roadCF(x, math.max(0, y or 0) + hc + lift, f) * CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, roll) * CFrame.new(0, -hc * S, 0)
+	-- RULE: no part of a car is ever below the road surface.
+	-- 1) The car rests on the straight line between the road under its nose and the road under its tail, and is then raised by however
+	--    much the road pokes above that line (a crest, or the joint between two road segments).
+	-- 2) When it is tilted (crash roll or pitch, jump pitch) it is raised so the lowest corner of its outer box sits on the road.
+	roll = roll or 0; pitch = pitch or 0; y = math.max(0, y or 0)
+	local hl, hw, top = car.bl or car.L / 2, car.bw or car.W / 2, car.bt or 1.6
+	local base, gap, nearJoint = nil, 0, false
+	if TERRAIN.amp == 0 and TERRAIN.bend == 0 then
+		base = roadCF(x, 0, f); gap = 0.02
+	else
+		-- the line reaches a little past the car's corners, however the car is turned or tipped
+		local hr = math.sqrt(hl * hl + hw * hw + ((roll ~= 0 or pitch ~= 0) and top * top or 0))
+		local pf, pr = w2v(x, 0, f + hr), w2v(x, 0, f - hr)
+		local mid = (pf + pr) / 2
+		base = CFrame.lookAt(mid, pf)
+		local up = base.UpVector
+		gap = math.max(0, (w2v(x, 0, f) - mid):Dot(up))
+		local joint = math.floor((f + hr) / SEG_LEN) * SEG_LEN -- a segment joint under the car is where the road is highest above the line
+		if joint > f - hr then gap = math.max(gap, (w2v(x, 0, joint) - mid):Dot(up), (w2v(x, 0, joint - 0.01) - mid):Dot(up)) end
+		gap += 0.09 -- 2.5 cm of air, so rounding can never put a wheel below the surface
+		nearJoint = math.floor((f + hr + 3) / SEG_LEN) * SEG_LEN > f - hr - 3
+	end
+	local rot = CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, roll)
+	local hc, lift = 0.75, 0
+	if roll ~= 0 or pitch ~= 0 then
+		local ax, ay, az = rot.XVector.Y, rot.YVector.Y, rot.ZVector.Y -- how much each car axis points up
+		local low = -hw * math.abs(ax) - hl * math.abs(az) + math.min(-hc * ay, (top - hc) * ay) -- lowest corner, relative to the pivot
+		lift = math.max(0, -low - hc)
+	end
+	car.root.CFrame = base * CFrame.new(0, (y + hc + lift) * S + gap, 0) * rot * CFrame.new(0, -hc * S, 0)
+	-- 3) Where two road segments meet, or whenever the car is tipped on a hill, the engine itself checks the car's box against the real
+	--    road parts and lifts it clear. This is exact, so it holds whatever the maths above missed.
+	if nearJoint or (lift > 0 and TERRAIN.amp ~= 0) then TERRAIN.settle(car) end
 end
 local lastBlink = false
 local AMBER_DIM = Color3.fromRGB(74, 58, 26)
@@ -3135,6 +3640,9 @@ end)()
 local finishGame
 ---------------------------------------------------------------- game flow
 applyTod = function()
+	local mp = CATALOG.map(SET.map)
+	if not mp or not GAR.mapOwned(mp) then SET.map = "interstate" end
+	TERRAIN.setMap(SET.map) -- rebuilds the road and scenery only when the map really changed
 	todNow = SET.tod; rainOn = SET.weather == "rain"
 	applyWeather(); setWet(rainOn)
 	local T = ({ flat = { 0, 0 }, hills = { 13, 0 }, curves = { 13, 45 } })[SET.terrain] or { 0, 0 }
@@ -3337,6 +3845,7 @@ RunService.RenderStepped:Connect(function(dtRaw)
 		poseCar(playerCar, P.x, 0, 0, 0, 0)
 		updateRoad(0); updateCamera(dt)
 		rainPart.CFrame = CFrame.new(camera.CFrame.Position + Vector3.new(0, 26, -12)); rain.Rate = rainOn and 1400 or 0
+		TERRAIN.snow.Rate = (TERRAIN.map.snow and not rainOn) and 420 or 0
 		blurFx.Size = 0
 		return
 	end
@@ -3406,6 +3915,7 @@ RunService.RenderStepped:Connect(function(dtRaw)
 	blurFx.Size = (state == "play" and not P.crashed) and lvl * 5 * xs * xs * (3 - 2 * xs) + (P.boosting and lvl * 2 or 0) or 0
 	rainPart.CFrame = CFrame.new(camera.CFrame.Position + Vector3.new(0, 26, -12)) * CFrame.Angles(-math.atan2(P.v * S, 150) * 0.6, 0, 0)
 	rain.Rate = rainOn and 1400 or 0
+	TERRAIN.snow.Rate = (TERRAIN.map.snow and not rainOn) and 420 or 0
 end)
 
 ---------------------------------------------------------------- load saved settings and progress
@@ -3427,11 +3937,37 @@ end)
 
 ---------------------------------------------------------------- Studio-only test hook (inactive in live games)
 if RunService:IsStudio() then
+	-- "scan": drives a test car down 30 km of the current map and terrain in every lane, straight, turned and tumbling, and measures
+	-- with raycasts against the real road parts how far its lowest corner is above the surface. Prints the worst case to Output.
+	local function SCAN()
+		task.spawn(function()
+			local was = state; state = "paused"
+			local car = buildCar("vanline", Color3.new(1, 0, 0))
+			local worst, worstAt, n, misses = math.huge, "", 0, 0
+			local r = Random.new(11)
+			for pass = 1, 3 do
+				for f = 0, 30000, 1.7 do
+					local x = ({ 3.65, 7.35, 11.05, 14.75, 1.9, 17.2, -9 })[1 + n % 7]
+					local yaw, roll, pitch, y = 0, 0, 0, 0
+					if pass == 2 then yaw = r:NextNumber(-3.14, 3.14) end
+					if pass == 3 then yaw, roll, pitch, y = r:NextNumber(-3.14, 3.14), r:NextNumber(-3.14, 3.14), r:NextNumber(-3.14, 3.14), r:NextNumber(0, 0.4) end
+					if n % 20 == 0 then updateRoad(f) end
+					poseCar(car, x, f, yaw, roll, y, pitch)
+					local c = TERRAIN.clearance(car)
+					if c == math.huge then misses += 1 elseif c < worst then worst = c; worstAt = ("pass %d f=%.1f x=%.2f yaw=%.2f roll=%.2f pitch=%.2f"):format(pass, f, x, yaw, roll, pitch) end
+					n += 1
+					if n % 400 == 0 then task.wait() end
+				end
+			end
+			car.model:Destroy(); state = was
+			print(("IW SCAN map=%s terrain=%s poses=%d lowest corner is %.3f m %s the road (%s) no-road=%d"):format(SET.map, SET.terrain, n, math.abs(worst), worst >= 0 and "ABOVE" or "BELOW", worstAt, misses))
+		end)
+	end
 	Workspace:GetAttributeChangedSignal("IW_Test"):Connect(function()
 		local cmd = Workspace:GetAttribute("IW_Test")
 		if type(cmd) == "string" and cmd:sub(1, 7) == "garage:" then -- garage:open | give | tab:shop | cat:wheels | sel:whl_mesh | close
 			local a, b = cmd:sub(8):match("^(%w+):?(.*)$")
-			if a == "open" then GAR.open() elseif a == "give" then GAR.give() elseif a == "tab" then GAR.tab(b) elseif a == "cat" then GAR.cat(b) elseif a == "sel" then GAR.sel(b) end
+			if a == "open" then GAR.open() elseif a == "give" then GAR.give() elseif a == "tab" then GAR.tab(b) elseif a == "cat" then GAR.cat(b) elseif a == "sel" then GAR.sel(b) elseif a == "crate" then GAR.tab("crates"); GAR.crate(b) end
 			return
 		end
 		if type(cmd) == "string" and cmd:sub(1, 4) == "car:" then -- preview any car in the menu, locked or not
@@ -3442,6 +3978,7 @@ if RunService:IsStudio() then
 			if k then if v == "true" then v = true elseif v == "false" then v = false end; SET[k] = v; applyTod(); refreshMenu() end
 			return
 		end
+		if cmd == "scan" then SCAN() return end
 		if cmd == "flip" and state == "play" then P.crashed = true; P.crashT = 0; P.crashE = 0.6; P.cRoll = math.pi; P.cPitch = 0; P.cvz = 0; P.fwd = 0; P.v = 0; P.spin = 0; P.msg = "flip test" end
 		if cmd == "ramp" and (state == "play" or state == "paused") and ramps[1] then
 			local r = ramps[1]
