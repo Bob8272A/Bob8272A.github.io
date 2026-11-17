@@ -47,7 +47,7 @@ pcall(function() store = DataStoreService:GetDataStore("InterstateWeave_v2") end
 
 local cache, lastSubmit, lastSave, dirty = {}, {}, {}, {}
 
-local function blank() return { settings = {}, career = 0, wallet = 0, best = { endless = 0, stunt = 0, pursuit = 0, rush = 0 }, owned = {}, equip = {}, builds = {}, passes = {}, maps = {}, receipts = {} } end
+local function blank() return { settings = {}, career = 0, wallet = 0, best = { endless = 0, stunt = 0, pursuit = 0, rush = 0 }, owned = {}, equip = {}, builds = {}, passes = {}, maps = {}, receipts = {}, unlockAll = false } end
 local PASS_BY_ID = {}
 for key, id in pairs(Catalog.PASS_IDS) do if id ~= 0 then PASS_BY_ID[id] = key end end
 local function slotsOf(data) return Catalog.BASE_SLOTS + (data.passes.slots and Catalog.PASS_SLOTS or 0) end
@@ -55,6 +55,14 @@ local function stateOf(data)
 	return { wallet = data.wallet, career = data.career, owned = data.owned, equip = data.equip, builds = data.builds, passes = data.passes, maps = data.maps, slots = slotsOf(data) }
 end
 local function carOk(id) return type(id) == "string" and SETTINGS.car[id] == true end
+local ServerStorage = game:GetService("ServerStorage")
+local codeTries = {} -- wrong unlock-code attempts per player: 5 per 10 minutes, so the 10-digit code cannot be guessed
+local function grantAll(data) -- every part, Robux item, map and car
+	for _, p in ipairs(Catalog.PARTS) do data.owned[p.id] = true end
+	for key in pairs(Catalog.PASS_IDS) do data.passes[key] = true end
+	for _, m in ipairs(Catalog.MAPS) do data.maps[m.id] = true end
+	data.career = math.max(data.career, 1000000) -- every car's career-point unlock
+end
 local function loadPlayer(plr)
 	local data = blank()
 	if store then
@@ -65,6 +73,7 @@ local function loadPlayer(plr)
 			if type(saved.owned) == "table" then for id, v in pairs(saved.owned) do if v == true and Catalog.part(id) then data.owned[id] = true end end end
 			if type(saved.passes) == "table" then for k, v in pairs(saved.passes) do if v == true and Catalog.PASS_IDS[k] ~= nil then data.passes[k] = true end end end
 			if type(saved.maps) == "table" then for id, v in pairs(saved.maps) do if v == true and Catalog.map(id) then data.maps[id] = true end end end
+			if saved.unlockAll == true then data.unlockAll = true end
 			if type(saved.receipts) == "table" then for id, v in pairs(saved.receipts) do if v == true and type(id) == "string" then data.receipts[id] = true end end end
 			if type(saved.equip) == "table" then for car, eq in pairs(saved.equip) do if carOk(car) and type(eq) == "table" then data.equip[car] = eq end end end
 			if type(saved.builds) == "table" then
@@ -77,6 +86,7 @@ local function loadPlayer(plr)
 			if type(saved.settings) == "table" then for k, v in pairs(saved.settings) do if validSetting(k, v) then data.settings[k] = v end end end
 		end
 	end
+	if data.unlockAll then grantAll(data) end
 	cache[plr] = data
 	-- game passes bought on another visit (or before they were saved) are checked against Roblox
 	task.spawn(function()
@@ -103,6 +113,7 @@ local function flush(plr)
 			old.owned, old.equip, old.builds, old.maps = data.owned, data.equip, data.builds, data.maps
 			old.passes = type(old.passes) == "table" and old.passes or {}
 			for k, v in pairs(data.passes) do old.passes[k] = v end
+			if data.unlockAll then old.unlockAll = true end
 			old.receipts = type(old.receipts) == "table" and old.receipts or {}
 			for k, v in pairs(data.receipts) do old.receipts[k] = v end
 			old.best = type(old.best) == "table" and old.best or {}
@@ -273,6 +284,18 @@ garage.OnServerInvoke = function(plr, action, a, b, c)
 		end
 		MarketplaceService:PromptProductPurchase(plr, id) -- the prize comes back through the IWCrate event
 		return reply(data, true, "waiting")
+	elseif action == "redeem" then -- secret unlock code (see grantAll); the code itself is never sent to players
+		local uid = plr.UserId
+		local tries = codeTries[uid]
+		if not tries or now - tries.t > 600 then tries = { n = 0, t = now }; codeTries[uid] = tries end
+		if tries.n >= 5 then return reply(data, false, ("Too many wrong codes. Try again in %d minutes."):format(math.ceil((600 - (now - tries.t)) / 60))) end
+		local secret = ServerStorage:FindFirstChild("IWUnlockCode")
+		if not secret or not secret:IsA("StringValue") or #secret.Value < 10 then return reply(data, false, "Codes are not set up in this game") end
+		if type(a) ~= "string" or #a > 20 then tries.n += 1; return reply(data, false, "That code is not valid") end
+		local given = a:gsub("%D", "")
+		if given ~= secret.Value then tries.n += 1; return reply(data, false, ("That code is not valid (%d tries left)"):format(5 - tries.n)) end
+		data.unlockAll = true; grantAll(data); dirty[plr] = true; flush(plr)
+		return reply(data, true, "Everything is unlocked")
 	elseif action == "studioGrant" then -- Studio only: lets you test a Robux item before its pass exists
 		if not RunService:IsStudio() or type(a) ~= "string" then return reply(data, false, "Not available") end
 		if a == "points" then data.wallet += 50000; data.career = math.max(data.career, 200000); dirty[plr] = true; return reply(data, true, "Studio test points") end

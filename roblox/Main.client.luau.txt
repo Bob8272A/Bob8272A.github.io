@@ -2337,6 +2337,33 @@ local fVol = field(SC); local _, volVal = fieldLabel(fVol, "Engine & effects vol
 local _, rV = slider(fVol, 0, 1, 0.01, function() return SET.sfx end, function(v) SET.sfx = v; volVal.Text = ("%d%%"):format(math.floor(v * 100 + 0.5)); saveSettings() end)
 sRef[#sRef + 1] = function() rV(); volVal.Text = ("%d%%"):format(math.floor(SET.sfx * 100 + 0.5)) end
 local _, rM = check(SC, "Mute all sound  [M]", function() return SET.muted end, function(v) SET.muted = v; saveSettings() end); sRef[#sRef + 1] = rM
+do -- unlock code
+	local fCode = field(SC); fieldLabel(fCode, "Unlock code")
+	local row = frame(fCode, { Size = UDim2.new(1, 0, 0, 40) })
+	local box = Instance.new("TextBox"); box.Size = UDim2.new(1, -118, 1, 0); box.BackgroundColor3 = C_PANEL; box.BackgroundTransparency = 0.2
+	box.TextColor3 = C_PAPER; box.PlaceholderText = "10-digit code"; box.PlaceholderColor3 = C_SOFT; box.Text = ""; box.Font = F_MONO; box.TextSize = 16
+	box.ClearTextOnFocus = false; box.BorderSizePixel = 0; box.Parent = row; corner(box, 8); pad(box, 0, 10)
+	box:GetPropertyChangedSignal("Text"):Connect(function() -- digits only, at most 10
+		local clean = box.Text:gsub("%D", ""):sub(1, 10)
+		if clean ~= box.Text then box.Text = clean end
+	end)
+	local rb = btn(row, { Size = UDim2.new(0, 108, 1, 0), Position = UDim2.new(1, -108, 0, 0), Text = "REDEEM", TextSize = 14,
+		BackgroundTransparency = 0, BackgroundColor3 = C_AMBER, TextColor3 = C_INK })
+	corner(rb, 8)
+	local status = text(fCode, { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Text = "", TextWrapped = true, TextSize = 12, Font = F_MONO, TextColor3 = C_SOFT })
+	local busy = false
+	rb.MouseButton1Click:Connect(function()
+		if busy then return end
+		if #box.Text ~= 10 then status.Text = "Codes are 10 digits."; status.TextColor3 = C_BRAKE; return end
+		busy = true; rb.Text = "..."; status.Text = "Checking..."; status.TextColor3 = C_SOFT
+		GAR.redeem(box.Text, function(ok, msg)
+			busy = false; rb.Text = "REDEEM"
+			status.Text = ok and "Everything is unlocked: every car, map, part and Robux item." or (msg or "That code is not valid")
+			status.TextColor3 = ok and C_AMBER or C_BRAKE
+			if ok then box.Text = ""; if state == "menu" then showCar(); refreshMenu() end end
+		end)
+	end)
+end
 local wasPaused = false
 goBtn(SC, "Done", false, nil, function()
 	setO.Visible = false
@@ -2801,6 +2828,14 @@ local function __build_garage()
 	GAR.sel = function(id) local p = CATALOG.part(id); if p then catSel = p.cat; tab = "parts"; select(p) end end
 	GAR.tab = function(t) tab = t; selPart = nil; previewEq = nil; showCar(); renderAll() end
 	GAR.give = function() task.spawn(function() call("studioGrant", "points"); renderAll() end) end
+	GAR.redeem = function(code, done) -- secret unlock code: checked only on the server
+		task.spawn(function()
+			local ok, msg = call("redeem", code)
+			CUR = carDef(SET.car)
+			if ok then popup("UNLOCKED", msg or "Everything is unlocked"); play("pickup", 0.8, 1.5) else popup("CODE NOT ACCEPTED", msg or "Try again") end
+			if done then done(ok, msg) end
+		end)
+	end
 	GAR.crate = function(id) local cr = CATALOG.crate(id); if cr then openCrate(cr) end end
 	GAR.buyMap = function(mp)
 		task.spawn(function()
