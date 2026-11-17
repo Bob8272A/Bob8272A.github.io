@@ -22,6 +22,7 @@ local SETTINGS = {
 	paint = function(v) return type(v) == "number" and v >= 1 and v <= 5 and v % 1 == 0 end,
 	motionBlur = { off = true, light = true, strong = true }, diff = { easy = true, normal = true, hard = true },
 	weather = { clear = true, rain = true }, tod = { day = true, dusk = true, night = true },
+	cam = { chase = true, far = true, hood = true, bumper = true, cockpit = true, cinema = true, heli = true },
 	map = (function() local t = {}; for _, m in ipairs(Catalog.MAPS) do t[m.id] = true end return t end)(),
 	car = (function() local t = {}; for _, id in ipairs(Catalog.CAR_IDS) do t[id] = true end return t end)(), mode = { endless = true, stunt = true, pursuit = true, rush = true },
 }

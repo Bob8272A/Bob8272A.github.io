@@ -933,11 +933,73 @@ function buildCar(kind, color, look)
 		local bcf, bsize = car.model:GetBoundingBox()
 		local rel = root.CFrame:ToObjectSpace(bcf).Position
 		car.bw = (math.abs(rel.X) + bsize.X / 2) / S; car.bl = (math.abs(rel.Z) + bsize.Z / 2) / S; car.bt = (rel.Y + bsize.Y / 2) / S
+		-- height of the bonnet on the centre line, a little behind the nose (for the hood camera)
+		local zq, best = -car.bl * 0.62 * S, nil
+		for _, p in ipairs(car.model:GetDescendants()) do
+			if p:IsA("BasePart") and p ~= root and p.Transparency < 1 then
+				local cf = root.CFrame:ToObjectSpace(p.CFrame)
+				local h = p.Size / 2
+				local ex = math.abs(cf.RightVector.X) * h.X + math.abs(cf.UpVector.X) * h.Y + math.abs(cf.LookVector.X) * h.Z
+				local ey = math.abs(cf.RightVector.Y) * h.X + math.abs(cf.UpVector.Y) * h.Y + math.abs(cf.LookVector.Y) * h.Z
+				local ez = math.abs(cf.RightVector.Z) * h.X + math.abs(cf.UpVector.Z) * h.Y + math.abs(cf.LookVector.Z) * h.Z
+				if math.abs(cf.Position.X) <= ex and math.abs(zq - cf.Position.Z) <= ez then
+					local top = cf.Position.Y + ey
+					if not best or top > best then best = top end
+				end
+			end
+		end
+		car.hoodY = best and best / S or car.bt * 0.7; car.hoodZ = zq / S
 	end
 	car.model.Parent = world
 	if PLAYER_KINDS[kind] then
-		local beam = Instance.new("SpotLight"); beam.Face = Enum.NormalId.Front; beam.Angle = 55; beam.Range = 60; beam.Brightness = 3
-		beam.Color = Color3.fromRGB(255, 244, 220); beam.Shadows = true; beam.Parent = car.root
+		-- lights and effects for the car you drive: two real headlight beams from the front corners, a red rear glow that
+		-- brightens under braking, tyre smoke from the rear wheels, sparks for scrapes and crashes, and a flame for nitro
+		local fx = { heads = {}, smoke = {} }
+		car.fx = fx
+		local function att(x, y, z, rx)
+			local a = Instance.new("Attachment"); a.Position = Vector3.new(x, y, z) * S
+			if rx then a.Orientation = Vector3.new(rx, 0, 0) end
+			a.Parent = root; return a
+		end
+		local hw, hl = car.bw * 0.62, car.bl + 0.05
+		for _, sx in ipairs({ -1, 1 }) do
+			local beam = Instance.new("SpotLight"); beam.Face = Enum.NormalId.Front; beam.Angle = 62; beam.Range = 58; beam.Brightness = 3
+			beam.Color = Color3.fromRGB(255, 244, 224); beam.Shadows = sx < 0; beam.Parent = att(sx * hw, 0.62, -hl, -5)
+			fx.heads[#fx.heads + 1] = beam
+		end
+		local tail = Instance.new("PointLight"); tail.Color = Color3.fromRGB(255, 34, 24); tail.Range = 9; tail.Brightness = 0.6; tail.Shadows = false
+		tail.Parent = att(0, 0.7, car.bl + 0.25); fx.tail = tail
+		-- the tail lamps themselves: dim when cruising, bright when braking
+		fx.tailParts = {}
+		for _, d in ipairs(car.model:GetDescendants()) do
+			if d:IsA("BasePart") and d.Material == Enum.Material.Neon then
+				local c = d.Color
+				if c.R > 0.75 and c.G < 0.2 and c.B < 0.2 and root.CFrame:PointToObjectSpace(d.Position).Z > 0 then fx.tailParts[#fx.tailParts + 1] = { p = d, c = c } end
+			end
+		end
+		for _, sx in ipairs({ -1, 1 }) do
+			local pe = Instance.new("ParticleEmitter")
+			pe.Texture = "rbxasset://textures/particles/smoke_main.dds"; pe.Rate = 0; pe.Lifetime = NumberRange.new(1.2, 2.2)
+			pe.Speed = NumberRange.new(1, 3); pe.SpreadAngle = Vector2.new(40, 40); pe.Acceleration = Vector3.new(0, 4, 0)
+			pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1.2), NumberSequenceKeypoint.new(1, 7) })
+			pe.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.55), NumberSequenceKeypoint.new(1, 1) })
+			pe.Color = ColorSequence.new(Color3.fromRGB(226, 226, 230)); pe.LightInfluence = 1; pe.RotSpeed = NumberRange.new(-60, 60)
+			pe.Rotation = NumberRange.new(0, 360); pe.Drag = 1.5; pe.EmissionDirection = Enum.NormalId.Back
+			pe.Parent = att(sx * (car.bw - 0.2), 0.15, car.bl - 0.75)
+			fx.smoke[#fx.smoke + 1] = pe
+		end
+		local sp = Instance.new("ParticleEmitter")
+		sp.Texture = "rbxasset://textures/particles/sparkles_main.dds"; sp.Rate = 0; sp.Lifetime = NumberRange.new(0.25, 0.6)
+		sp.Speed = NumberRange.new(14, 34); sp.SpreadAngle = Vector2.new(70, 70); sp.Acceleration = Vector3.new(0, -60, 0)
+		sp.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 0) })
+		sp.Color = ColorSequence.new(Color3.fromRGB(255, 220, 140), Color3.fromRGB(255, 120, 30)); sp.LightEmission = 1; sp.LightInfluence = 0
+		sp.Parent = att(0, 0.35, 0); fx.sparks = sp
+		local fl = Instance.new("ParticleEmitter")
+		fl.Texture = "rbxasset://textures/particles/fire_main.dds"; fl.Rate = 0; fl.Lifetime = NumberRange.new(0.08, 0.16)
+		fl.Speed = NumberRange.new(10, 16); fl.SpreadAngle = Vector2.new(6, 6); fl.EmissionDirection = Enum.NormalId.Back
+		fl.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.9), NumberSequenceKeypoint.new(1, 0.1) })
+		fl.Color = ColorSequence.new(Color3.fromRGB(120, 190, 255), Color3.fromRGB(255, 140, 60)); fl.LightEmission = 1; fl.LightInfluence = 0
+		fl.Parent = att(0, 0.4, car.bl + 0.05); fx.flame = fl
 	end
 	return car
 end
@@ -1526,8 +1588,7 @@ do -- snow for the snowy map: same emitter box as the rain, slower and softer
 end
 
 ---------------------------------------------------------------- sound
--- rbxasset:// sounds ship with every Roblox client. Paste a Creator Store audio id (e.g. "rbxassetid://123")
--- into engine / rain / boost to add those loops; they are left empty until you pick ones you like.
+-- rbxasset:// sounds ship with every Roblox client; the rbxassetid ones are public Creator Store audio (each checked to load in Studio).
 local VOL, play, SOUNDS
 do
 local SOUND_IDS = {
@@ -1536,19 +1597,30 @@ local SOUND_IDS = {
 	tick = "rbxasset://sounds/clickfast.wav",
 	pickup = "rbxasset://sounds/electronicpingshort.wav",
 	land = "rbxasset://sounds/collide.wav",
-	engine = "", -- looped engine sound; its pitch follows the rpm
-	night = "", lofi = "", overdrive = "", -- music tracks (looped)
-	rain = "",
-	boost = "",
+	smash = "rbxassetid://7340406466", -- heavy crash
+	engine = "rbxassetid://80317022777602", -- Car-Engine-Loop (Roblox Resources); two layers of it follow rpm and throttle
+	skid = "rbxassetid://109487442763183", -- tyre squeal loop
+	wind = "rbxassetid://85352789269452", -- wind loop, rises with speed
+	rain = "rbxassetid://13039198193",
+	night = "rbxassetid://121013346303842", -- Night Drive: "Electronic Palm Shadows"
+	lofi = "rbxassetid://9046863253", -- Lo-fi Cruise: "Poolside"
+	overdrive = "rbxassetid://134324160901088", -- Overdrive: "Fast Drum & Bass Action Soundtrack"
 }
 local SoundService = game:GetService("SoundService")
 local sounds = {}
 for k, id in pairs(SOUND_IDS) do
 	if id ~= "" then
 		local snd = Instance.new("Sound"); snd.Name = "IW_" .. k; snd.SoundId = id; snd.Volume = 0.5
-		snd.Looped = (k == "engine" or k == "rain" or k == "boost" or k == "night" or k == "lofi" or k == "overdrive")
+		snd.Looped = (k == "engine" or k == "rain" or k == "skid" or k == "wind" or k == "night" or k == "lofi" or k == "overdrive")
+		if snd.Looped then snd.Volume = 0 end
 		snd.Parent = SoundService; sounds[k] = snd
 	end
+end
+-- the engine is two copies of the same loop: a low, throaty one that leads at low rpm and a high one that takes over near the redline
+if sounds.engine then
+	local hiE = sounds.engine:Clone(); hiE.Name = "IW_engineHi"; hiE.Parent = SoundService; sounds.engineHi = hiE
+	local eq = Instance.new("EqualizerSoundEffect"); eq.LowGain = 5; eq.MidGain = 0; eq.HighGain = -6; eq.Parent = sounds.engine
+	local eq2 = Instance.new("EqualizerSoundEffect"); eq2.LowGain = -4; eq2.MidGain = 1; eq2.HighGain = 1; eq2.Parent = hiE
 end
 SOUNDS = sounds
 VOL = { sfx = 0.8, muted = false }
@@ -1565,7 +1637,7 @@ end
 local GAR = {}
 local SET = { steer = 1.0, autoCenter = false, rewindFx = true, motionBlur = "light", swipeSafe = false, sfx = 0.8, muted = false,
 	diff = "normal", traffic = 1, weather = "clear", tod = "dusk", paint = 1, car = "vanta", mode = "endless",
-	divided = true, terrain = "flat", track = "night", music = 0.7, tutorialDone = false, map = "interstate" }
+	divided = true, terrain = "flat", track = "night", music = 0.7, tutorialDone = false, map = "interstate", cam = "chase" }
 local MD = {} -- oncoming traffic, Pursuit and Rush hour (filled in further down)
 local PROG = { career = 0, wallet = 0, owned = {}, equip = {}, builds = {}, passes = {}, maps = {}, slots = 3, best = { endless = 0, stunt = 0, pursuit = 0, rush = 0 } }
 local DIFFS = {
@@ -1625,7 +1697,9 @@ local keys = {}
 local state = "menu" -- menu | play | over | paused
 local P, playerCar, traffic = nil, nil, {}
 local hist, histT, rewinding = {}, 0, nil
-local camMode, camPos, shake = 0, nil, 0
+-- camera modes, switched with C (or the CAM button on phones); the choice is saved
+local camMode, camPos, shake = { i = 1, ids = { "chase", "far", "hood", "bumper", "cockpit", "cinema", "heli" },
+	names = { chase = "CHASE", far = "FAR CHASE", hood = "HOOD CAM", bumper = "BUMPER CAM", cockpit = "COCKPIT", cinema = "CINEMATIC", heli = "HELICOPTER" } }, nil, 0
 local ind, indT = 0, 0
 local cockpit = {}
 local CUR = carDef(SET.car)
@@ -2925,7 +2999,7 @@ function crash(msg, other, extra)
 		other.crashed = true; other.spinV = -P.spin * 0.5; other.change = nil
 		other.v = math.max(0, other.v + (P.fwd - other.v) * (0.35 + E * 0.25))
 	end
-	shake = 0.6 + E; play("crash", 0.6 + 0.4 * E, 0.8)
+	shake = 0.6 + E; play("crash", 0.6 + 0.4 * E, 0.8); play("smash", 0.5 + 0.5 * E, 0.95 + math.random() * 0.1); TERRAIN.sparks(30 + math.floor(E * 50))
 	local e = Instance.new("Explosion"); e.BlastPressure = 0; e.BlastRadius = 1; e.DestroyJointRadiusPercent = 0
 	e.Position = playerCar.root.Position + Vector3.new(0, 3, 0); e.Visible = E > 0.4; e.Parent = Workspace
 end
@@ -2950,7 +3024,7 @@ function sideSwipe(c, dx, ox, toward, mult)
 	shake = math.max(shake, 0.35)
 	if (c.scrapeCD or 0) > P.clock then return end
 	c.scrapeCD = P.clock + 0.5
-	play("crash", 0.25, 1.6)
+	play("crash", 0.25, 1.6); TERRAIN.sparks(14)
 	takeDamage(curDiff().dmg * (mult or 1) * (0.7 + math.min(1, toward / 5) * 0.8), c, "scrape")
 end
 local function bumperTap(c, oz, behind)
@@ -2959,7 +3033,7 @@ local function bumperTap(c, oz, behind)
 	c.counted = true; shake = math.max(shake, 0.45)
 	if (c.scrapeCD or 0) > P.clock then return end
 	c.scrapeCD = P.clock + 0.5
-	play("crash", 0.35, 1.1)
+	play("crash", 0.35, 1.1); TERRAIN.sparks(10)
 	takeDamage(curDiff().dmg * 0.6, c, "bump")
 end
 function nearMiss(c, clearance, headOn)
@@ -3008,7 +3082,7 @@ local function stepCrash(dt)
 		P.cPitch = damp(P.cPitch, math.floor(P.cPitch / math.pi + 0.5) * math.pi, 6, dt)
 	end
 	P.fwd = P.cvz; P.v = P.cvz; P.f += P.cvz * dt
-	P.throttle = 0
+	P.throttle = 0; P.skid = math.min(1, math.abs(P.spin) * 0.25) * clamp(P.cvz / 20, 0, 1)
 end
 local function stepPlayer(dt)
 	if P.crashed then stepCrash(dt); return end
@@ -3035,6 +3109,8 @@ local function stepPlayer(dt)
 	P.yaw = damp(P.yaw, yawTarget, (4.5 + sens * 3) * car.steer, dt)
 	local lat, grip = P.yaw * v, (8.4 + sens * 1.6) * car.grip * wet
 	if math.abs(lat) > grip then P.yaw *= grip / math.abs(lat) end
+	P.braking = brk > 0 and not airborne
+	P.skid = airborne and 0 or math.max(brk * clamp((v - 8) / 30, 0, 1), clamp((math.abs(P.yaw * v) / grip - 0.72) * 3.5, 0, 1))
 	P.h = clamp(P.h + P.yaw * dt, -0.7, 0.7)
 	-- in a bend the road turns under you: hold your line by steering into it
 	if TERRAIN.bend ~= 0 then
@@ -3068,7 +3144,7 @@ local function stepPlayer(dt)
 		local vlat = math.sin(P.h) * P.v
 		if math.abs(vlat) > 10 then P.wall = true; crash(("You hit the %s at %d mph."):format(side < 0 and SET.divided and "median barrier" or "guardrail", math.floor(P.fwd * 2.23694 + 0.5))); return end
 		P.h = -P.h * 0.25; P.yaw = 0; P.v *= 0.6 ^ (dt * 6); shake = math.max(shake, 0.25)
-		play("crash", 0.12, 1.8)
+		play("crash", 0.12, 1.8); TERRAIN.sparks(6)
 	end
 	local lw = SET.divided and INNER_WALL or -OUTER_WALL
 	if P.x - hw < lw then P.x = lw + hw; hitWall(-1)
@@ -3256,7 +3332,6 @@ local CR -- camera position in road coordinates { x, y, f }
 local function updateCamera(dt)
 	local car = playerCar
 	local sp = P.fwd
-	local cm = P.crashed and 0 or camMode
 	if state == "menu" then
 		menuT += dt * 0.12
 		local a = math.sin(menuT) * 0.9 + 0.35
@@ -3270,7 +3345,11 @@ local function updateCamera(dt)
 		setCarVisible(car, true); if cockpit.folder then cockpit.folder.Parent = nil end
 		return
 	end
-	if cm == 0 then
+	local id = P.crashed and "chase" or (camMode.ids[camMode.i] or "chase")
+	local t = os.clock()
+	local fov
+	if id ~= "cinema" then camMode.cine = nil end
+	if id == "chase" or id == "far" or id == "heli" then
 		local want, look
 		if P.crashed then
 			local E = P.crashE
@@ -3281,30 +3360,61 @@ local function updateCamera(dt)
 			local k = 1 - math.exp(-2.2 * dt)
 			CR = { x = CR.x + (want.x - CR.x) * k, y = CR.y + (want.y - CR.y) * k, f = CR.f + (want.f - CR.f) * k }
 		else
-			local back, height = 6.2 + math.min(sp, 90) * 0.022, 2.05 + math.min(sp, 90) * 0.004
-			local head = P.h * 0.55
-			want = { x = P.x - math.sin(head) * back, y = height + P.y * 0.8, f = P.f - math.cos(head) * back }
+			local back, height, ahead, lookY
+			if id == "chase" then back, height, ahead, lookY = 6.2 + math.min(sp, 90) * 0.022, 2.05 + math.min(sp, 90) * 0.004, 12, 0.95
+			elseif id == "far" then back, height, ahead, lookY = 10.5 + math.min(sp, 90) * 0.03, 3.3 + math.min(sp, 90) * 0.006, 16, 1.1
+			else back, height, ahead, lookY = 17 + math.min(sp, 90) * 0.05, 15, 24, 0 end
+			local head = P.h * (id == "heli" and 0.25 or 0.55)
+			want = { x = (id == "heli" and P.x * 0.7 or P.x) - math.sin(head) * back, y = height + P.y * 0.8, f = P.f - math.cos(head) * back }
 			if not CR then CR = want end
 			-- distance behind is damped relative to the car so the camera never falls miles back
-			local rel = damp(CR.f - P.f, want.f - P.f, 4, dt)
-			CR = { x = damp(CR.x, want.x, 7, dt), y = damp(CR.y, want.y, 5, dt), f = P.f + rel }
-			look = w2v(P.x + math.sin(head) * 12, 0.95 + P.y * 0.9, P.f + 12)
+			local rel = damp(CR.f - P.f, want.f - P.f, id == "heli" and 2.5 or 4, dt)
+			CR = { x = damp(CR.x, want.x, id == "heli" and 2.5 or 7, dt), y = damp(CR.y, want.y, id == "heli" and 2 or 5, dt), f = P.f + rel }
+			look = w2v(P.x + math.sin(head) * ahead, lookY + P.y * 0.9, P.f + ahead)
 		end
 		local cf = CFrame.lookAt(w2v(CR.x, CR.y, CR.f), look)
-		local s = (clamp(sp / 140, 0, 1) ^ 2) * 0.024 + shake * 0.25
-		local t = os.clock()
+		local s = (clamp(sp / 140, 0, 1) ^ 2) * (id == "heli" and 0.006 or 0.024) + shake * 0.25
 		cf = cf * CFrame.new((math.sin(t * 37) + math.sin(t * 23.3)) * s * 0.5 * S, (math.sin(t * 41.7) + math.sin(t * 29.1)) * s * 0.4 * S, 0)
 		camera.CFrame = cf
 		setCarVisible(car, true); if cockpit.folder then cockpit.folder.Parent = nil end
-	else
+		fov = id == "chase" and 56 + clamp(sp, 0, 145) * 0.13 or id == "far" and 48 + clamp(sp, 0, 145) * 0.1 or 50 + clamp(sp, 0, 145) * 0.05
+		if P.crashed then fov = 56 end
+	elseif id == "cinema" then
+		-- TV-style trackside cameras: a camera waits by the road ahead, follows the car past it, then cuts to the next one
+		local c = camMode.cine
+		if not c or P.f > c.f + 22 or P.f < c.f - 160 then
+			-- a camera crane just past our guardrail, high enough to look over trucks in the near lane
+			c = { f = P.f + 60 + math.random() * 30, x = OUTER_WALL + 3.2, y = 5 + math.random() * 4 }
+			camMode.cine = c; CR = nil
+		end
+		local pos = w2v(c.x, c.y, c.f)
+		local tgt = w2v(P.x, 0.7 + P.y, P.f + 1.5)
+		camera.CFrame = CFrame.lookAt(pos, tgt)
+		local dist = (pos - tgt).Magnitude / S
+		fov = clamp(math.deg(2 * math.atan(5.5 / math.max(dist, 1))), 14, 62)
+		camera.FieldOfView = fov -- cuts snap: no zoom easing between cameras
+		setCarVisible(car, true); if cockpit.folder then cockpit.folder.Parent = nil end
+	elseif id == "hood" or id == "bumper" then
+		CR = nil
+		local eye
+		if id == "hood" then
+			eye = car.root.CFrame * CFrame.new(0, ((car.hoodY or 1) + 0.3) * S, ((car.hoodZ or -1.4) + 0.35) * S) * CFrame.Angles(math.rad(-2.5), 0, 0)
+		else
+			eye = car.root.CFrame * CFrame.new(0, 0.5 * S, -((car.bl or car.L / 2) + 0.08) * S)
+		end
+		local s = (clamp(sp / 140, 0, 1) ^ 2) * 0.01 + shake * 0.12
+		camera.CFrame = eye * CFrame.new((math.sin(t * 37) + math.sin(t * 23.3)) * s * 0.5 * S, (math.sin(t * 41.7) + math.sin(t * 29.1)) * s * 0.4 * S, 0)
+		setCarVisible(car, id == "hood"); if cockpit.folder then cockpit.folder.Parent = nil end
+		fov = (id == "hood" and 66 or 74) + clamp(sp, 0, 145) * 0.09
+	else -- cockpit
 		CR = nil
 		local eye = car.root.CFrame * CFrame.new(-0.4 * S, 1.2 * S, -0.1 * S)
 		local s = shake * 0.12
 		camera.CFrame = eye * CFrame.new((math.random() - 0.5) * s * S, (math.random() - 0.5) * s * S, 0)
 		setCarVisible(car, false); layoutCockpit(camera.CFrame); cockpit.folder.Parent = world
+		fov = 66 + clamp(sp, 0, 145) * 0.07
 	end
-	local fov = (cm == 0 and 56 + clamp(sp, 0, 145) * 0.13 or 66 + clamp(sp, 0, 145) * 0.07) + (P.boosting and 7 or 0)
-	camera.FieldOfView = damp(camera.FieldOfView, fov, 3, dt)
+	if id ~= "cinema" then camera.FieldOfView = damp(camera.FieldOfView, fov + (P.boosting and 7 or 0), 3, dt) end
 	shake = math.max(0, shake - dt * 1.6)
 end
 
@@ -3707,7 +3817,7 @@ local function resetRun()
 	end
 	MD.resetOncoming(); MD.resetPursuit(); MD.resetRush()
 	nextRampF = 260; nextPickF = 120
-	hist = {}; histT = 0; rewinding = nil; ind = 0; camPos = nil; camMode = camMode
+	hist = {}; histT = 0; rewinding = nil; ind = 0; camPos = nil; camMode.cine = nil
 	for _, p in ipairs(popList) do p.g:Destroy() end; table.clear(popList)
 end
 local TUT -- tutorial state, set further down
@@ -3797,7 +3907,7 @@ UIS.InputBegan:Connect(function(input, gp)
 	local k = input.KeyCode
 	if setO.Visible then if k == Enum.KeyCode.Escape then setO.Visible = false end return end
 	if k == Enum.KeyCode.R and (state == "play" or state == "over") then startRewind()
-	elseif k == Enum.KeyCode.C and state == "play" then camMode = 1 - camMode; TUT.event("cam")
+	elseif k == Enum.KeyCode.C and state == "play" then camMode.next(); TUT.event("cam")
 	elseif (k == Enum.KeyCode.P or k == Enum.KeyCode.Escape) and (state == "play" or state == "paused") then togglePause()
 	elseif k == Enum.KeyCode.M then SET.muted = not SET.muted; popup(SET.muted and "SOUND OFF" or "SOUND ON"); saveSettings()
 	elseif k == Enum.KeyCode.Q and state == "play" then ind = (ind == -1) and 0 or -1; indT = 0; for _, c in ipairs(traffic) do c.yr = nil; c.yb = false end
@@ -3871,16 +3981,111 @@ if UIS.TouchEnabled then
 	tbtn("BRAKE", Enum.KeyCode.S, UDim2.new(1, -300, 1, -96), UDim2.fromOffset(84, 80))
 	tbtn("GAS", Enum.KeyCode.W, UDim2.new(1, -208, 1, -96), UDim2.fromOffset(84, 80), true)
 	local nos = tbtn("NOS", Enum.KeyCode.LeftShift, UDim2.new(1, -208, 1, -184), UDim2.fromOffset(84, 80))
+	local camB = tbtn("CAM", Enum.KeyCode.Unknown, UDim2.new(1, -300, 1, -184), UDim2.fromOffset(84, 80))
+	camB.TextSize = 13
+	camB.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.Touch and state == "play" then camMode.next(); TUT.event("cam") end end)
 	RunService.Heartbeat:Connect(function() nos.Visible = SET.mode == "stunt" end)
 	cluster.Position = UDim2.new(1, -14, 0, 64 + 180); cluster.AnchorPoint = Vector2.new(1, 1)
 end
 end)()
+
+---------------------------------------------------------------- camera switching
+camMode.set = function(id)
+	for i, v in ipairs(camMode.ids) do if v == id then camMode.i = i; return end end
+	camMode.i = 1
+end
+camMode.next = function()
+	camMode.i = camMode.i % #camMode.ids + 1
+	local id = camMode.ids[camMode.i]
+	SET.cam = id; camMode.cine = nil
+	popup("CAMERA", camMode.names[id] .. "  ·  " .. camMode.i .. " of " .. #camMode.ids)
+	saveSettings()
+end
+camMode.set(SET.cam)
+
+---------------------------------------------------------------- the player car's lights and effects
+TERRAIN.sparks = function(n)
+	local fx = playerCar and playerCar.fx
+	if fx and not TERRAIN.low then fx.sparks:Emit(n) elseif fx then fx.sparks:Emit(math.ceil(n / 3)) end
+end
+TERRAIN.carFx = function()
+	local fx = playerCar and playerCar.fx
+	if not fx then return end
+	local dark = todNow == "night" and 1 or todNow == "dusk" and 0.45 or 0
+	if rainOn then dark = math.max(dark, 0.5) end
+	for _, h in ipairs(fx.heads) do h.Brightness = 0.6 + dark * 5; h.Range = 40 + dark * 30 end
+	local driving = state == "play" and not P.crashed
+	local brk = driving and P.braking and P.fwd > 1
+	fx.tail.Brightness = brk and 3.2 or (0.3 + dark * 0.8)
+	fx.tail.Range = brk and 14 or 9
+	if fx.brk ~= brk then
+		fx.brk = brk
+		for _, t in ipairs(fx.tailParts) do t.p.Color = brk and t.c:Lerp(Color3.new(1, 0.85, 0.8), 0.25) or t.c:Lerp(Color3.new(0, 0, 0), 0.4) end
+	end
+	local smoke = (state == "play" or state == "over") and not rewinding and not P.air and (P.skid or 0) or 0
+	for _, s in ipairs(fx.smoke) do s.Rate = smoke * (TERRAIN.low and 25 or 70) end
+	fx.flame.Rate = (driving and P.boosting) and 90 or 0
+end
+
+---------------------------------------------------------------- audio: music, engine, wind, tyres, rain (runs every frame, in every state)
+do
+	local AU = { gear = 1, shiftT = 0, vol = {} }
+	local function loop(s, target, rate, dt) -- fade a looped sound towards a volume; start it when needed, stop it once silent
+		if not s then return end
+		local v = AU.vol[s] or 0
+		v += (target - v) * (1 - math.exp(-rate * dt)); AU.vol[s] = v
+		if v > 0.004 then
+			if not s.IsPlaying then s:Play() end
+			s.Volume = v
+		elseif s.IsPlaying then s:Stop(); s.Volume = 0 end
+	end
+	SOUNDS.update = function(dt)
+		local mute = SET.muted
+		-- music crossfades between tracks and keeps playing on the menu, in the garage and after a crash
+		for _, k in ipairs({ "night", "lofi", "overdrive" }) do
+			local want = (not mute and SET.track == k) and SET.music * 0.45 * (state == "paused" and 0.45 or 1) or 0
+			loop(SOUNDS[k], want, 1.6, dt)
+		end
+		local fx = mute and 0 or SET.sfx
+		local driving = (state == "play" or state == "over") and not P.crashed and not rewinding
+		-- engine: idles on the menu, follows rpm and throttle while driving, dips for a moment at every gear change
+		if P.gear ~= AU.gear then AU.shiftT = (P.gear > AU.gear) and 0.2 or 0.1; AU.gear = P.gear end
+		AU.shiftT = math.max(0, AU.shiftT - dt)
+		local car = CUR
+		local tone = 0.88 + clamp((car.power - 0.4e6) / 2.6e6, 0, 1) * 0.3 -- small cars rasp higher, big engines sit lower
+		local ev = car.id == "phantom" or car.id == "phantomx" -- electric: a smooth whine instead of a rumble
+		local r = state == "menu" and 0.03 or clamp((P.rpm - 900) / 7000, 0, 1)
+		local thr = state == "menu" and 0 or P.throttle
+		local dip = AU.shiftT > 0 and 0.5 or 1
+		local base = fx * (state == "menu" and 0.22 or (driving and 0.6 or 0))
+		if state == "paused" then base = 0 end
+		local boost = P.boosting and 0.1 or 0
+		if SOUNDS.engine then
+			SOUNDS.engine.PlaybackSpeed = (ev and 0.9 + r * 0.9 or 0.5 + r * 0.62) * tone * (AU.shiftT > 0 and 0.95 or 1) + boost
+			loop(SOUNDS.engine, base * (ev and 0.35 or 1) * (1 - r * 0.65) * (0.55 + 0.45 * thr) * dip, 14, dt)
+		end
+		if SOUNDS.engineHi then
+			SOUNDS.engineHi.PlaybackSpeed = (ev and 1.5 + r * 1.3 or 0.85 + r * 0.95) * tone * (AU.shiftT > 0 and 0.94 or 1) + boost
+			loop(SOUNDS.engineHi, base * (0.12 + r * 0.8) * (0.4 + 0.6 * thr) * dip, 14, dt)
+		end
+		-- wind grows with speed (quieter inside the cockpit), tyres squeal under hard braking or when sliding, rain hisses
+		local sp = clamp((P.fwd - 12) / 70, 0, 1)
+		if SOUNDS.wind then
+			SOUNDS.wind.PlaybackSpeed = 0.8 + sp * 0.5
+			loop(SOUNDS.wind, (state == "play" or state == "over") and fx * sp * sp * ((camMode.ids[camMode.i] == "cockpit") and 0.25 or 0.55) or 0, 4, dt)
+		end
+		if SOUNDS.skid then loop(SOUNDS.skid, (state == "play" or state == "over") and not rewinding and fx * (P.skid or 0) * 0.5 or 0, 10, dt) end
+		if SOUNDS.rain then loop(SOUNDS.rain, (rainOn and state ~= "paused") and fx * 0.3 or 0, 2, dt) end
+	end
+end
 
 ---------------------------------------------------------------- main loop
 RunService.RenderStepped:Connect(function(dtRaw)
 	local dt = math.min(dtRaw, 0.05)
 	camera.CameraType = Enum.CameraType.Scriptable
 	VOL.sfx = SET.sfx; VOL.muted = SET.muted
+	SOUNDS.update(dt)
+	TERRAIN.carFx()
 	if not playerCar then showCar() end
 	if state == "menu" then
 		poseCar(playerCar, P.x, 0, 0, 0, 0)
@@ -3935,21 +4140,6 @@ RunService.RenderStepped:Connect(function(dtRaw)
 	poseCar(playerCar, P.x, P.f, -P.h, P.crashed and P.cRoll or -P.yaw * 0.06, P.y, P.crashed and P.cPitch or (P.air and clamp(P.vy * 0.03, -0.3, 0.3) or 0))
 	for _, c in ipairs(traffic) do poseCar(c, c.x, c.f, c.yawv or 0, 0, 0) end
 	updateIndicators(); updateCamera(dt); updateHud(dt); MD.updateHud()
-	-- music and engine loops (only if audio ids are set in SOUND_IDS)
-	for _, k in ipairs({ "night", "lofi", "overdrive" }) do
-		local s = SOUNDS[k]
-		if s then
-			local on = SET.track == k and not SET.muted and SET.music > 0
-			if on and not s.IsPlaying then s:Play() elseif not on and s.IsPlaying then s:Stop() end
-			s.Volume = SET.music * 0.5
-		end
-	end
-	local eng = SOUNDS.engine
-	if eng then
-		local on = state == "play" and not SET.muted
-		if on and not eng.IsPlaying then eng:Play() elseif not on and eng.IsPlaying then eng:Stop() end
-		eng.PlaybackSpeed = 0.6 + P.rpm / 8000 * 1.4; eng.Volume = SET.sfx * (0.25 + P.throttle * 0.35)
-	end
 	-- motion blur at speed (Roblox has no radial blur, so this is a gentle full-screen blur)
 	local lvl = SET.motionBlur == "strong" and 1 or SET.motionBlur == "light" and 0.5 or 0
 	local xs = clamp((P.fwd - 26) / 70, 0, 1)
@@ -3969,6 +4159,7 @@ task.spawn(function()
 		for k, v in pairs(res.settings) do if SET[k] ~= nil and type(v) == type(SET[k]) then SET[k] = v end end
 	end
 	if not PAINTS[SET.paint] then SET.paint = 1 end
+	camMode.set(SET.cam)
 	if type(res.career) == "number" then PROG.career = math.max(PROG.career, res.career) end
 	if GAR.apply then GAR.apply(res) end
 	if type(res.best) == "table" then for m, v in pairs(res.best) do if type(v) == "number" then PROG.best[m] = math.max(PROG.best[m] or 0, v) end end end
